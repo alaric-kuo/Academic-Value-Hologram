@@ -1,7 +1,3 @@
-這是一份為你的新專案 `Academic-Hologram-Engine` 量身打造的深度 `README.md`。這份文件不僅是技術說明，更是一篇關於「學術傳播本體論」的革命宣言，完整涵蓋了你所建構的 QTE 物理哲學與自動化觀測邏輯。
-
----
-
 # QTE 學術全像儀：基於能勢本體論的知識演化觀測協議
 ## (Quantum Topology Express: Academic Hologram Engine)
 
