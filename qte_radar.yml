@@ -4,66 +4,51 @@ on:
   push:
     paths:
       - '**/*.md'
-      - '**/*.tex'
       - 'qte_academic_manifest.json'
       - '!README.md'
+      - '!QTE_OBSERVATION_LOG.md'
 
 permissions:
-  contents: write  # 必須開啟，允許機器人推播代碼與建立 Release
+  contents: write
 
 jobs:
   run-hologram-and-archive:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🛰️ 載入宇宙網格 (Checkout Repository)
+      - name: 🛰️ 載入宇宙網格
         uses: actions/checkout@v4
 
-      - name: 🐍 部署算力引擎 (Set up Python)
+      - name: 🐍 部署算力引擎
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: 📦 安裝相變依賴套件 (Install Python Deps)
-        run: pip install openai requests numpy
+      - name: 📦 安裝相變依賴套件
+        run: pip install openai requests numpy PyPDF2
 
-      - name: ⚙️ 部署 PDF 封存編譯器 (Install md-to-pdf)
-        run: npm install -g md-to-pdf
-
-      - name: 🔮 啟動 QTE 引擎 (Run Hologram Core)
+      - name: 🔮 啟動 QTE 引擎批次掃描
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           S2_API_KEY: ${{ secrets.S2_API_KEY }}
         run: python qte_hologram_core.py
 
-      - name: 🖨️ 物理投影封存 (Compile Markdown to PDF Archive)
-        run: |
-          if [ -n "$TARGET_MD" ]; then
-            echo "正在將 $TARGET_MD 坍縮為視覺封存檔 (PDF)..."
-            md2pdf "$TARGET_MD"
-            mv "${TARGET_MD%.*}.pdf" "Archive_Projection.pdf"
-          else
-            echo "無目標檔案，跳過編譯。"
-          fi
-
-      - name: 🚩 資訊熵同步 (Commit README)
+      - name: 🚩 資訊熵同步 (Commit 觀測日誌)
         run: |
           git config --local user.email "qte-bot@aj-consulting.net"
           git config --local user.name "QTE Hologram Oracle"
-          git add README.md
-          git commit -m "📡 QTE 雷達波更新：狀態 [$HEX_CODE] [skip ci]" || echo "無相變發生"
+          git add QTE_OBSERVATION_LOG.md
+          git commit -m "📡 QTE 雷達波更新：批次拓樸觀測完成 [skip ci]" || echo "無相變發生"
           git push
 
       - name: ⏳ 刻印語意時間戳 (Create Semantic Release)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -f "Archive_Projection.pdf" ]; then
+          if [ -n "$HEX_CODE" ]; then
             TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
             TAG_NAME="QTE-State-${HEX_CODE}-${TIMESTAMP}"
-            
-            echo "正在建立 Github Release 語意時間戳: $TAG_NAME"
-            gh release create "$TAG_NAME" Archive_Projection.pdf README.md \
-              -t "狀態 [$HEX_CODE] - 演化時間戳 $TIMESTAMP" \
-              -n "本體論狀態矩陣已鎖定。此 Release 包含當時的純文字演化結果 (README.md) 與視覺投影封存 (PDF)。"
+            gh release create "$TAG_NAME" QTE_OBSERVATION_LOG.md \
+              -t "狀態矩陣更新 - 演化時間戳 $TIMESTAMP" \
+              -n "本體論狀態矩陣已鎖定。此 Release 紀錄了當下網格中所有波包的拓樸狀態。"
           fi
