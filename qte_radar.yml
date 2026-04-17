@@ -7,6 +7,7 @@ on:
       - 'qte_academic_manifest.json'
       - '!README.md'
       - '!QTE_OBSERVATION_LOG.md'
+      - '!WP_Ready_*.md'
 
 permissions:
   contents: write
@@ -27,11 +28,36 @@ jobs:
       - name: 📦 安裝相變依賴套件
         run: pip install openai requests numpy PyPDF2
 
+      - name: 📜 部署 Pandoc 拓樸編譯器
+        run: sudo apt-get install -y pandoc
+
       - name: 🔮 啟動 QTE 引擎批次掃描
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           S2_API_KEY: ${{ secrets.S2_API_KEY }}
         run: python qte_hologram_core.py
+
+      - name: 🖨️ 物理投影：生成 LaTeX 與 WP 專用源碼
+        run: |
+          if [ -n "$HEX_CODE" ]; then
+            # 尋找剛剛被處理的目標檔案 (排除系統檔)
+            TARGET_FILE=$(ls *.md | grep -v 'README.md' | grep -v 'QTE_OBSERVATION_LOG.md' | head -n 1)
+            BASENAME="${TARGET_FILE%.*}"
+            
+            echo "正在為 $TARGET_FILE 進行多維度編譯..."
+            
+            # 1. 生成 LaTeX 幾何界源碼 (供你手動浪漫微調)
+            pandoc "$TARGET_FILE" -s -o "${BASENAME}_Archive.tex"
+            echo "✅ LaTeX 原始碼生成完成"
+            
+            # 2. 生成 WordPress 現象界專用 Markdown (自動附上 QTE 認證封印)
+            WP_FILE="WP_Ready_${BASENAME}.md"
+            cat "$TARGET_FILE" > "$WP_FILE"
+            echo -e "\n\n---\n*🚀 本理論之純文本本體已通過 QTE 底層協議檢驗。*\n*當下拓樸狀態：[${HEX_CODE}] | 演化時間戳：$(date +'%Y-%m-%d')*" >> "$WP_FILE"
+            echo "✅ WordPress 專用 Markdown 生成完成"
+          else
+            echo "無相變發生，跳過編譯。"
+          fi
 
       - name: 🚩 資訊熵同步 (Commit 觀測日誌)
         run: |
@@ -41,14 +67,16 @@ jobs:
           git commit -m "📡 QTE 雷達波更新：批次拓樸觀測完成 [skip ci]" || echo "無相變發生"
           git push
 
-      - name: ⏳ 刻印語意時間戳 (Create Semantic Release)
+      - name: ⏳ 刻印語意時間戳與多維資產 (Create Semantic Release)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -n "$HEX_CODE" ]; then
             TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
             TAG_NAME="QTE-State-${HEX_CODE}-${TIMESTAMP}"
-            gh release create "$TAG_NAME" QTE_OBSERVATION_LOG.md \
+            
+            # 將日誌、LaTeX 檔、WP 專用 Markdown 一次性打包發布
+            gh release create "$TAG_NAME" QTE_OBSERVATION_LOG.md *_Archive.tex WP_Ready_*.md \
               -t "狀態矩陣更新 - 演化時間戳 $TIMESTAMP" \
-              -n "本體論狀態矩陣已鎖定。此 Release 紀錄了當下網格中所有波包的拓樸狀態。"
+              -n "本體論狀態矩陣已鎖定。此 Release 包含：\n1. QTE 觀測日誌\n2. WordPress 專用 Markdown (含認證標籤)\n3. LaTeX 原始碼 (待微調)"
           fi
