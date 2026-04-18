@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 from transformers import pipeline
 
 # ==============================================================================
-# AVH Genesis Engine (V6.0.0 絕對顯化・生成式大腦版)
+# AVH Genesis Engine (V6.0.1 絕對顯化・生成式大腦修正版)
 # ==============================================================================
 
 print("🧠 [載入觀測核心] 正在啟動多語系拓樸網路 (paraphrase-multilingual-MiniLM)...")
@@ -22,8 +22,8 @@ except Exception as e:
 
 print("✨ [載入造物核心] 正在啟動生成式摘要大腦 (mT5 Multilingual XLSum)...")
 try:
-    # 引入真正的生成式 AI，讓系統能「用自己的話」重述你的核心邏輯
-    summarizer = pipeline("summarization", model="csebuetnlp/mT5_multilingual_XLSum")
+    # 修正點 1：將任務精準指定為 mT5 原生的 "text2text-generation"
+    summarizer = pipeline("text2text-generation", model="csebuetnlp/mT5_multilingual_XLSum")
 except Exception as e:
     print("生成大腦載入失敗：" + str(e))
     sys.exit(1)
@@ -58,14 +58,13 @@ def extract_ontological_trajectory(source_path):
         core_chain_data = ranked_paragraphs[:core_logic_size]
         
         core_chain_data_sorted = sorted(core_chain_data, key=lambda x: x[3])
-        # 這是抽取出的「原文」碎片
         extracted_text = "\n".join([item[1] for item in core_chain_data_sorted])
         
         print("✨ [論述顯化] 系統正在消化拓樸結構，並以自身的語言重新編織核心邏輯...")
-        # 將抽取出的原文送入生成式大腦，要求它「用自己的話」寫出連貫的摘要
-        # 限制輸入長度避免記憶體爆走
+        
         input_for_summary = extracted_text[:2000]
-        generated_summary = summarizer(input_for_summary, max_length=200, min_length=50, do_sample=False)[0]['summary_text']
+        # 修正點 2：對接 text2text-generation 的正確輸出鍵值 ['generated_text']
+        generated_summary = summarizer(input_for_summary, max_length=200, min_length=50, do_sample=False)[0]['generated_text']
         
         cohesive_wfs = [item[2] for item in core_chain_data]
         psi_global = np.mean(cohesive_wfs, axis=0)
@@ -85,7 +84,7 @@ def extract_ontological_trajectory(source_path):
             "psi_global": psi_global,
             "vec_stats": vec_stats,
             "probe_text": absolute_core_probe,
-            "logic_chain_summary": generated_summary, # 現在這裡是 AI "自己的話" 了
+            "logic_chain_summary": generated_summary,
             "window_count": core_logic_size,
             "full_text": raw_text
         }
