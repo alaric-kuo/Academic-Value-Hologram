@@ -7,9 +7,11 @@ import networkx as nx
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
 from sentence_transformers import SentenceTransformer
+
 # ==============================================================================
-# AVH Genesis Engine (V5.0.0 拓樸大腦：核心邏輯鍊萃取版)
+# AVH Genesis Engine (V5.0.1 拓樸大腦：核心邏輯鍊萃取版)
 # ==============================================================================
+
 print("🧠 [載入核心] 正在啟動多語系神經網路模型 (paraphrase-multilingual-MiniLM-L12-v2)...")
 try:
     # 支援 50+ 語言的高維模型，能真正看懂繁體中文與複雜哲學邏輯
@@ -17,6 +19,7 @@ try:
 except Exception as e:
     print(f"模型載入失敗：{str(e)}")
     sys.exit(1)
+
 def extract_ontological_trajectory(source_path):
     print(f"🌊 [波包坍縮] 正在讀取源碼：{source_path}")
     try:
@@ -118,62 +121,70 @@ def generate_trajectory_log(target_file, trajectory_data, hex_code, manifest):
 *(系統自動判讀此波包的本體架構，已剔除無關之舉例、字典檔與離群雜訊)*
 ```text
 {summary_display}
+````
 
-
+-----
 
 """
-def export_wordpress_html(basename, content, hex_code, state_name):
-# 避開 Python 3.10 以下 f-string 無法使用反斜線的雷區
-html_content = content.replace('\n', '
-')
-timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def export\_wordpress\_html(basename, content, hex\_code, state\_name):
+\# 避開 Python 3.10 以下 f-string 無法使用反斜線的雷區，並使用雙引號加固
+html\_content = content.replace("\\n", "<br>")
+timestamp\_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+```
 html_template = f"""
+```
 
-<div class="avh-hologram-article">
-<div class="avh-content">
-{html_content}
-</div>
-<hr>
-<div class="avh-seal" style="border: 2px solid #333; padding: 20px; background: #fafafa; margin-top: 30px;">
-<p><strong>📡 本理論已通過 學術價值全像儀 (AVH) 核心邏輯檢驗</strong></p>
-<p>當下演化狀態：[ {hex_code} ] - <strong>{state_name}</strong></p>
-<p>語意時間戳：{timestamp_str}</p>
-<p><em>拓樸大腦邏輯萃取 | 本體論底層協議保護 | AJ Consulting</em></p>
-</div>
-</div>
+\<div class="avh-hologram-article"\>
+\<div class="avh-content"\>
+{html\_content}
+\</div\>
+\<hr\>
+\<div class="avh-seal" style="border: 2px solid \#333; padding: 20px; background: \#fafafa; margin-top: 30px;"\>
+\<p\>\<strong\>📡 本理論已通過 學術價值全像儀 (AVH) 核心邏輯檢驗\</strong\>\</p\>
+\<p\>當下演化狀態：[ {hex\_code} ] - \<strong\>{state\_name}\</strong\>\</p\>
+\<p\>語意時間戳：{timestamp\_str}\</p\>
+\<p\>\<em\>拓樸大腦邏輯萃取 | 本體論底層協議保護 | AJ Consulting\</em\>\</p\>
+\</div\>
+\</div\>
 """
-with open(f'WP_Ready_{basename}.html', 'w', encoding='utf-8') as f:
-f.write(html_template)
-def export_latex(basename, content, hex_code, state_name):
-tex_content = content.replace('#', '\section')
-tex_template = (
-"\documentclass{article}\n"
-"\usepackage[utf8]{inputenc}\n"
-"\usepackage{xeCJK}\n"
-"\title{" + basename + "}\n"
-"\author{Alaric Kuo}\n"
-"\date{\today}\n"
-"\begin{document}\n"
-"\maketitle\n"
-"\begin{abstract}\n"
-"本文章經由 AVH 學術價值全像儀觀測，當下演化狀態為 [" + hex_code + "] " + state_name + "。\n"
-"\end{abstract}\n\n"
-+ tex_content + "\n\n"
-"\end{document}\n"
+with open(f"WP\_Ready\_{basename}.html", "w", encoding="utf-8") as f:
+f.write(html\_template)
+
+def export\_latex(basename, content, hex\_code, state\_name):
+tex\_content = content.replace("\#", "\\section")
+tex\_template = (
+"\\documentclass{article}\\n"
+"\\usepackage[utf8]{inputenc}\\n"
+"\\usepackage{xeCJK}\\n"
+"\\title{" + basename + "}\\n"
+"\\author{Alaric Kuo}\\n"
+"\\date{\\today}\\n"
+"\\begin{document}\\n"
+"\\maketitle\\n"
+"\\begin{abstract}\\n"
+"本文章經由 AVH 學術價值全像儀觀測，當下演化狀態為 [" + hex\_code + "] " + state\_name + "。\\n"
+"\\end{abstract}\\n\\n"
+\+ tex\_content + "\\n\\n"
+"\\end{document}\\n"
 )
-with open(f'{basename}_Archive.tex', 'w', encoding='utf-8') as f:
-f.write(tex_template)
-if name == "main":
-if not os.path.exists('avh_manifest.json'):
-print("工具調用失敗，原因為 遺失底層定義檔 (avh_manifest.json)")
+with open(f"{basename}\_Archive.tex", "w", encoding="utf-8") as f:
+f.write(tex\_template)
+
+if **name** == "**main**":
+if not os.path.exists("avh\_manifest.json"):
+print("工具調用失敗，原因為 遺失底層定義檔 (avh\_manifest.json)")
 sys.exit(1)
-with open('avh_manifest.json', 'r', encoding='utf-8') as f:
+
+```
+with open("avh_manifest.json", "r", encoding="utf-8") as f:
     manifest = json.load(f)
     
 source_files = []
 # 掃描目標：所有的 md 與 tex 檔 (排除自動生成的 Log 避免無限迴圈)
 for ext in ["*.md", "*.tex"]:
-    source_files.extend([f for f in glob.glob(ext) if f.lower() not in ['avh_observation_log.md']])
+    source_files.extend([f for f in glob.glob(ext) if f.lower() not in ["avh_observation_log.md"]])
 
 if not source_files:
     print("系統休眠：未偵測到有效理論源碼波包。")
@@ -181,7 +192,7 @@ if not source_files:
     
 print(f"\n🚀 啟動 AVH 引擎 (拓樸大腦模式)，共偵測到 {len(source_files)} 個波包等待坍縮...")
 
-with open('AVH_OBSERVATION_LOG.md', 'w', encoding='utf-8') as log_file:
+with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
     log_file.write("# 📡 AVH 學術價值全像儀：純粹邏輯定位軌跡\n")
     log_file.write("*本文件詳實紀錄方法論實作過程中，知識波包透過圖論 (Graph Theory) 萃取出絕對核心邏輯後，所坍縮出的最終拓樸狀態。*\n\n---\n")
     
@@ -192,32 +203,32 @@ with open('AVH_OBSERVATION_LOG.md', 'w', encoding='utf-8') as log_file:
         
         ordered_dimensions = ["value_intent", "governance", "cognition", "architecture", "expansion", "application"]
         hex_bits = ""
-        psi = trajectory_data['psi_global']
+        psi = trajectory_data["psi_global"]
         
         # 使用新大腦對六維定義進行動態編碼與碰撞
         for key in ordered_dimensions:
-            dim = manifest['dimensions'][key]
-            v_pos = embedding_model.encode([dim['pos_def']])[0]
-            v_neg = embedding_model.encode([dim['neg_def']])[0]
+            dim = manifest["dimensions"][key]
+            v_pos = embedding_model.encode([dim["pos_def"]])[0]
+            v_neg = embedding_model.encode([dim["neg_def"]])[0]
             
             sim_pos = np.dot(psi, v_pos) / (np.linalg.norm(psi) * np.linalg.norm(v_pos))
             sim_neg = np.dot(psi, v_neg) / (np.linalg.norm(psi) * np.linalg.norm(v_neg))
             hex_bits += "1" if sim_pos > sim_neg else "0"
         
         last_hex_code = hex_bits
-        state_name = manifest['states'][hex_bits]['name']
+        state_name = manifest["states"][hex_bits]["name"]
         
         # 寫入物理投影資產
         report = generate_trajectory_log(target_source, trajectory_data, hex_bits, manifest)
         log_file.write(report)
         
         basename = os.path.splitext(target_source)[0]
-        export_wordpress_html(basename, trajectory_data['full_text'], hex_bits, state_name)
-        export_latex(basename, trajectory_data['full_text'], hex_bits, state_name)
+        export_wordpress_html(basename, trajectory_data["full_text"], hex_bits, state_name)
+        export_latex(basename, trajectory_data["full_text"], hex_bits, state_name)
         
         print(f"✅ {target_source} 理論收斂完成！ [{hex_bits}]")
 
 # 將狀態輸出給 CI/CD 進行 Tag 標註
 if last_hex_code:
-    with open(os.environ.get('GITHUB_ENV', 'env.tmp'), 'a') as env_file:
+    with open(os.environ.get("GITHUB_ENV", "env.tmp"), "a") as env_file:
         env_file.write(f"HEX_CODE={last_hex_code}\n")
