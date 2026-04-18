@@ -26,10 +26,10 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 📦 安裝多語系神經網路、真 LLM 與物理繁體鎮壓器
+      - name: 📦 安裝多語系神經網路、真 LLM 與 zhconv 繁體鎮壓器
         run: |
           pip install --upgrade pip
-          pip install sentence-transformers numpy networkx scikit-learn transformers torch accelerate opencc-python-reimplemented
+          pip install sentence-transformers numpy networkx scikit-learn transformers torch accelerate zhconv
 
       - name: 🔮 啟動 AVH 引擎理論顯化
         run: python avh_core.py
