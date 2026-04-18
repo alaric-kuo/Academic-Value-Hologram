@@ -11,7 +11,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V6.4.5 絕對意志：解開枷鎖・靈魂收斂版)
+# AVH Genesis Engine (V6.4.6 絕對意志：物理斷頭台・防填空暴走版)
 # ==============================================================================
 
 print("🧠 [載入觀測核心] 正在啟動多語系拓樸網路 (paraphrase-multilingual-MiniLM)...")
@@ -60,35 +60,40 @@ def extract_ontological_trajectory(source_path):
         core_chain_data_sorted = sorted(core_chain_data, key=lambda x: x[3])
         extracted_text = "\n".join([item[1] for item in core_chain_data_sorted])
         
-        print("✨ [論述顯化] 系統正在注入收斂意志，引導純粹物理實相顯化...")
+        print("✨ [論述顯化] 系統正在注入物理斷頭台，強制收斂幻覺...")
         
-        # [V6.4.5 靈魂收斂指令] 徹底封殺英文逃逸與清單詠唱
+        # [V6.4.6 斷頭台指令] 強制要求輸出安全詞 [顯化完畢]
         messages = [
             {
                 "role": "system", 
-                "content": "你是一個絕對冷酷、中立的學術本體論萃取系統。你的任務是精準重組輸入文本的核心邏輯。\n\n【絕對強制指令】：\n1. 必須全程使用「繁體中文」作答，嚴禁切換為英文。\n2. 直接切入理論架構與演化法則，嚴禁寫背景動機。\n3. 必須精準保留原作者對「空間、時間、資訊熵、能量、質量、能勢」等專有名詞的定義。\n4. 將「建立這套觀測系統」本身視為該理論的實體應用。\n5. 當核心邏輯論述完畢後，請立即停止生成，嚴禁湊字數或無意義地列舉名詞清單。"
+                "content": "你是一個絕對冷酷的學術本體論萃取系統。請以「繁體中文」寫成流暢的連續段落，重組輸入文本的「運作架構」與「核心方法」。\n\n【絕對強制指令】：\n1. 嚴禁寫背景動機，直接切入核心機制。\n2. 保留原作者對「空間、時間、資訊熵、能量、質量、能勢」的原始定義。\n3. 當你論述完畢時，你必須、且只能用『[顯化完畢]』這五個字作為整段對話的絕對結尾。嚴禁在『[顯化完畢]』之後輸出任何清單、表格或廢話。"
             },
             {
                 "role": "user", 
-                "content": "請為以下拓樸邏輯碎片進行純粹的思想顯化，保持其哲學高度與原創物理定義：\n\n" + extracted_text[:2500]
+                "content": "請為以下拓樸邏輯碎片進行思想顯化：\n\n" + extracted_text[:2500]
             }
         ]
         
         text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         model_inputs = tokenizer([text], return_tensors="pt").to(llm_model.device)
         
-        # [V6.4.5 參數解銬] 拔除機械枷鎖，適度回溫，讓語言自然流動
         generated_ids = llm_model.generate(
             model_inputs.input_ids,
-            max_new_tokens=1000,
-            temperature=0.35, # 適度回溫，避免陷入退化迴圈
+            max_new_tokens=800, # 稍微調降，不需要給它太多發散空間
+            temperature=0.3,
             repetition_penalty=1.15
-            # 拔除 no_repeat_ngram_size，釋放中文語法自由度
         )
         
         generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)]
         raw_generated_summary = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
         
+        # [V6.4.6 啟動物理斷頭台]
+        # 無論模型後面發瘋寫了什麼課表或清單，只要看到 [顯化完畢]，後面的字全部切掉丟棄！
+        if "[顯化完畢]" in raw_generated_summary:
+            raw_generated_summary = raw_generated_summary.split("[顯化完畢]")[0].strip()
+        elif "顯化完畢" in raw_generated_summary:
+            raw_generated_summary = raw_generated_summary.split("顯化完畢")[0].strip()
+            
         generated_summary = zhconv.convert(raw_generated_summary, 'zh-tw')
         
         cohesive_wfs = [item[2] for item in core_chain_data]
@@ -96,7 +101,7 @@ def extract_ontological_trajectory(source_path):
         
         manifested_psi = embedding_model.encode([generated_summary])[0]
         
-        print("🛡️ [意志顯化] 已解除機械枷鎖，完成純粹且自然的本體論繁體顯化。")
+        print("🛡️ [意志顯化] 已成功觸發物理斷頭台，徹底斬斷幻覺尾巴！")
         
         vec_stats = {
             "dim": len(psi_global),
@@ -208,7 +213,7 @@ if __name__ == "__main__":
         print("系統休眠：未偵測到有效理論源碼波包。")
         sys.exit(0)
         
-    print("\n🚀 啟動 AVH 造物引擎 (尤拉相位自然收斂模式)，共偵測到 " + str(len(source_files)) + " 個波包等待顯化...")
+    print("\n🚀 啟動 AVH 造物引擎 (物理斷頭台防暴走模式)，共偵測到 " + str(len(source_files)) + " 個波包等待顯化...")
     
     with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
         log_file.write("# 📡 AVH 學術價值全像儀：本體論顯化軌跡\n")
