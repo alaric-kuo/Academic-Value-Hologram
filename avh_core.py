@@ -7,20 +7,29 @@ import networkx as nx
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
 from sentence_transformers import SentenceTransformer
+from transformers import pipeline
 
 # ==============================================================================
-# AVH Genesis Engine (V5.0.2 防彈拓樸大腦版 - 免疫 Markdown 渲染崩潰)
+# AVH Genesis Engine (V6.0.0 絕對顯化・生成式大腦版)
 # ==============================================================================
 
-print("🧠 [載入核心] 正在啟動多語系神經網路模型 (paraphrase-multilingual-MiniLM-L12-v2)...")
+print("🧠 [載入觀測核心] 正在啟動多語系拓樸網路 (paraphrase-multilingual-MiniLM)...")
 try:
     embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 except Exception as e:
     print("模型載入失敗：" + str(e))
     sys.exit(1)
 
+print("✨ [載入造物核心] 正在啟動生成式摘要大腦 (mT5 Multilingual XLSum)...")
+try:
+    # 引入真正的生成式 AI，讓系統能「用自己的話」重述你的核心邏輯
+    summarizer = pipeline("summarization", model="csebuetnlp/mT5_multilingual_XLSum")
+except Exception as e:
+    print("生成大腦載入失敗：" + str(e))
+    sys.exit(1)
+
 def extract_ontological_trajectory(source_path):
-    print("🌊 [波包坍縮] 正在讀取源碼：" + source_path)
+    print("🌊 [波包顯化] 正在讀取源碼：" + source_path)
     try:
         with open(source_path, 'r', encoding='utf-8') as file:
             raw_text = file.read()
@@ -36,21 +45,32 @@ def extract_ontological_trajectory(source_path):
         sim_matrix = cosine_similarity(embeddings)
         np.fill_diagonal(sim_matrix, 0)
         
+        # 簡併態重力懲罰 (粉碎重複性字典檔)
+        local_density = np.sum(sim_matrix > 0.85, axis=1) + 1
+        
         nx_graph = nx.from_numpy_array(sim_matrix)
         scores = nx.pagerank(nx_graph)
         
-        ranked_paragraphs = sorted(((scores[i], s, embeddings[i], i) for i, s in enumerate(paragraphs)), reverse=True)
+        adjusted_scores = {i: scores[i] / (local_density[i] ** 1.5) for i in range(len(paragraphs))}
+        ranked_paragraphs = sorted(((adjusted_scores[i], s, embeddings[i], i) for i, s in enumerate(paragraphs)), reverse=True)
         
         core_logic_size = max(3, int(len(paragraphs) * 0.35))
         core_chain_data = ranked_paragraphs[:core_logic_size]
         
         core_chain_data_sorted = sorted(core_chain_data, key=lambda x: x[3])
-        core_logic_text = "\n".join([item[1] for item in core_chain_data_sorted])
+        # 這是抽取出的「原文」碎片
+        extracted_text = "\n".join([item[1] for item in core_chain_data_sorted])
+        
+        print("✨ [論述顯化] 系統正在消化拓樸結構，並以自身的語言重新編織核心邏輯...")
+        # 將抽取出的原文送入生成式大腦，要求它「用自己的話」寫出連貫的摘要
+        # 限制輸入長度避免記憶體爆走
+        input_for_summary = extracted_text[:2000]
+        generated_summary = summarizer(input_for_summary, max_length=200, min_length=50, do_sample=False)[0]['summary_text']
         
         cohesive_wfs = [item[2] for item in core_chain_data]
         psi_global = np.mean(cohesive_wfs, axis=0)
         
-        print("🛡️ [拓樸大腦] 精煉出 " + str(core_logic_size) + " 個核心邏輯節點。")
+        print("🛡️ [反重力裝甲] 精煉出 " + str(core_logic_size) + " 個絕對理論奇點，並已完成論述顯化。")
         
         vec_stats = {
             "dim": len(psi_global),
@@ -65,12 +85,12 @@ def extract_ontological_trajectory(source_path):
             "psi_global": psi_global,
             "vec_stats": vec_stats,
             "probe_text": absolute_core_probe,
-            "logic_chain_summary": core_logic_text,
+            "logic_chain_summary": generated_summary, # 現在這裡是 AI "自己的話" 了
             "window_count": core_logic_size,
             "full_text": raw_text
         }
     except Exception as e:
-        print("工具調用失敗，原因為 拓樸萃取過程錯誤 (" + str(e) + ")")
+        print("工具調用失敗，原因為 邏輯顯化過程錯誤 (" + str(e) + ")")
         sys.exit(1)
 
 def generate_trajectory_log(target_file, trajectory_data, hex_code, manifest):
@@ -78,13 +98,8 @@ def generate_trajectory_log(target_file, trajectory_data, hex_code, manifest):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S CST")
     stats = trajectory_data['vec_stats']
     
-    summary_display = trajectory_data['logic_chain_summary'][:800]
-    if len(trajectory_data['logic_chain_summary']) > 800:
-        summary_display += "...\n(後續邏輯鏈已截斷)"
-    
-    # 完全屏棄多行字串與連續反引號，改用單行拼接，防止 UI 崩潰
     log_output = (
-        "## 📡 觀測軌跡：`" + target_file + "`\n"
+        "## 📡 演化顯化軌跡：`" + target_file + "`\n"
         "* **物理時間戳**：`" + timestamp + "`\n\n"
         "### 1. 🧠 核心邏輯拓樸萃取 (Semantic Graph Abstraction)\n"
         "* **邏輯節點數**：從全文提煉出 `" + str(trajectory_data['window_count']) + "` 個具備最高引力的核心邏輯段落。\n"
@@ -95,17 +110,16 @@ def generate_trajectory_log(target_file, trajectory_data, hex_code, manifest):
         "### 2. 🎯 理論奇點探針 (Absolute Logic Centroid)\n"
         "* **全文最高維度交匯點 (核心主張)**：\n"
         "    > \"" + trajectory_data['probe_text'] + "...\"\n\n"
-        "### 3. 🧬 最終狀態坍縮 (Topological Collapse)\n"
-        "* **狀態陣列**：`[" + hex_code + "]`\n"
+        "### 3. 🧬 最終狀態顯化 (Topological Manifestation)\n"
+        "* **狀態張量**：`[" + hex_code + "]`\n"
         "* **物理相變**：**" + hex_info['name'] + "**\n"
         "* **學術指紋**：\n"
         "    > " + hex_info['desc'] + "\n\n"
         "---\n"
-        "### 🔗 附錄：AI 拓樸大腦提煉之「核心邏輯鏈摘要」\n"
-        "*(系統自動判讀此波包的本體架構，已剔除無關之舉例、字典檔與離群雜訊)*\n"
-        + "`" + "`" + "`" + "text\n"
-        + summary_display + "\n"
-        + "`" + "`" + "`" + "\n\n---\n"
+        "### 🔗 附錄：系統生成之「核心論述顯化」\n"
+        "*(本段落為 AVH 系統吸收文章拓樸邏輯後，自行摘要生成之傳播級論述)*\n"
+        "> **" + trajectory_data['logic_chain_summary'] + "**\n\n"
+        "---\n"
     )
     return log_output
 
@@ -113,7 +127,6 @@ def export_wordpress_html(basename, content, hex_code, state_name):
     html_content = content.replace('\n', '<br>')
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # 改用單行拼接，防止 HTML 標籤讓 UI 渲染器發瘋
     html_output = (
         "<div class=\"avh-hologram-article\">\n"
         "    <div class=\"avh-content\">\n"
@@ -121,10 +134,10 @@ def export_wordpress_html(basename, content, hex_code, state_name):
         "    </div>\n"
         "    <hr>\n"
         "    <div class=\"avh-seal\" style=\"border: 2px solid #333; padding: 20px; background: #fafafa; margin-top: 30px;\">\n"
-        "        <p><strong>📡 本理論已通過 學術價值全像儀 (AVH) 核心邏輯檢驗</strong></p>\n"
+        "        <p><strong>📡 本理論已完成 學術價值全像儀 (AVH) 核心邏輯顯化</strong></p>\n"
         "        <p>當下演化狀態：[ " + hex_code + " ] - <strong>" + state_name + "</strong></p>\n"
-        "        <p>語意時間戳：" + timestamp_str + "</p>\n"
-        "        <p><em>拓樸大腦邏輯萃取 | 本體論底層協議保護 | AJ Consulting</em></p>\n"
+        "        <p>物理時間戳：" + timestamp_str + "</p>\n"
+        "        <p><em>拓樸大腦生成顯化 | 本體論底層協議保護 | AJ Consulting</em></p>\n"
         "    </div>\n"
         "</div>\n"
     )
@@ -143,7 +156,7 @@ def export_latex(basename, content, hex_code, state_name):
         "\\begin{document}\n"
         "\\maketitle\n"
         "\\begin{abstract}\n"
-        "本文章經由 AVH 學術價值全像儀觀測，當下演化狀態為 [" + hex_code + "] " + state_name + "。\n"
+        "本文章經由 AVH 學術價值全像儀觀測，當下演化狀態顯化為 [" + hex_code + "] " + state_name + "。\n"
         "\\end{abstract}\n\n"
         + tex_content + "\n\n"
         "\\end{document}\n"
@@ -167,11 +180,11 @@ if __name__ == "__main__":
         print("系統休眠：未偵測到有效理論源碼波包。")
         sys.exit(0)
         
-    print("\n🚀 啟動 AVH 引擎 (拓樸大腦模式)，共偵測到 " + str(len(source_files)) + " 個波包等待坍縮...")
+    print("\n🚀 啟動 AVH 造物引擎 (絕對顯化模式)，共偵測到 " + str(len(source_files)) + " 個波包等待顯化...")
     
     with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
-        log_file.write("# 📡 AVH 學術價值全像儀：純粹邏輯定位軌跡\n")
-        log_file.write("*本文件詳實紀錄方法論實作過程中，知識波包透過圖論 (Graph Theory) 萃取出絕對核心邏輯後，所坍縮出的最終拓樸狀態。*\n\n---\n")
+        log_file.write("# 📡 AVH 學術價值全像儀：本體論顯化軌跡\n")
+        log_file.write("*本文件詳實紀錄知識波包透過圖論萃取出絕對核心邏輯後，經由系統生成大腦自行理解並重新編織，所顯化出的最終物理實相。*\n\n---\n")
         
         last_hex_code = ""
         for target_source in source_files:
@@ -201,7 +214,7 @@ if __name__ == "__main__":
             export_wordpress_html(basename, trajectory_data["full_text"], hex_bits, state_name)
             export_latex(basename, trajectory_data["full_text"], hex_bits, state_name)
             
-            print("✅ " + target_source + " 理論收斂完成！ [" + hex_bits + "]")
+            print("✅ " + target_source + " 理論顯化完成！ [" + hex_bits + "]")
 
     if last_hex_code:
         with open(os.environ.get("GITHUB_ENV", "env.tmp"), "a") as env_file:
