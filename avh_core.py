@@ -8,7 +8,7 @@ from openai import OpenAI
 from datetime import datetime
 
 # ==============================================================================
-# QTE Academic Hologram Core Engine (V1.3.0 終極協議版)
+# AVH Genesis Engine (V2.1.0 完整軌跡收斂版)
 # ==============================================================================
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -22,25 +22,20 @@ def get_embedding(text):
         print(f"工具調用失敗，原因為 OpenAI API 拒絕連線或超時狀態 ({str(e)})")
         sys.exit(1)
 
-def extract_full_text_integral_fingerprint(source_path):
-    """
-    【全文拓樸連續積分與重心提取】
-    揚棄剛性前端切割，將全文視為連續場域。積分出全局指紋後，
-    反向提取與全局重心最接近的片段作為探針。
-    """
+def extract_ontological_trajectory(source_path):
+    """提取全文連續積分、重心特徵與探針"""
     print(f"🌊 [波包坍縮] 正在讀取源碼：{source_path}")
     try:
         with open(source_path, 'r', encoding='utf-8') as file:
             full_text = " ".join(file.read().split())
     except Exception as e:
         print(f"檔案讀取異常，跳過此文件 ({str(e)})")
-        return None, None
+        return None
         
     if len(full_text) < 500:
         print(f"⚠️ {source_path} 文本資訊熵過低，忽略觀測。")
-        return None, None
+        return None
     
-    # 拓樸重疊視窗 (Overlap Windows)
     window_size, stride = 1500, 800
     trajectories = [full_text[i:i+window_size] for i in range(0, len(full_text), stride) if len(full_text[i:i+window_size]) > 100]
     
@@ -48,130 +43,184 @@ def extract_full_text_integral_fingerprint(source_path):
         response = client.embeddings.create(input=trajectories, model="text-embedding-3-small", timeout=30)
         wave_functions = [np.array(data.embedding) for data in response.data]
         
-        # 1. 全息積分：生成全局指紋 (Ψ_global)
         psi_global = np.mean(wave_functions, axis=0)
         
-        # 2. 語意重心提取：找出最能代表全文核心的片段
+        vec_stats = {
+            "dim": len(psi_global),
+            "mean": float(np.mean(psi_global)),
+            "std": float(np.std(psi_global)),
+            "norm": float(np.linalg.norm(psi_global))
+        }
+        
         similarities = [np.dot(wf, psi_global) / (np.linalg.norm(wf) * np.linalg.norm(psi_global)) for wf in wave_functions]
         centroid_index = np.argmax(similarities)
+        semantic_probe = trajectories[centroid_index][:200]
         
-        # 提取該片段的前 150 字作為向傳統網格發射的物理探針
-        semantic_probe = trajectories[centroid_index][:150]
-        
-        print(f"🎯 [重心鎖定] 已提取最高資訊熵片段作為探針。")
-        return semantic_probe, psi_global
-
+        return {
+            "psi_global": psi_global,
+            "vec_stats": vec_stats,
+            "probe_text": semantic_probe,
+            "window_count": len(trajectories),
+            "centroid_sim": float(similarities[centroid_index]),
+            "full_text": full_text
+        }
     except Exception as e:
         print(f"工具調用失敗，原因為 向量轉換過程超時 ({str(e)})")
         sys.exit(1)
 
 def scan_background_field(query_text):
+    """掃描背景網格，並回傳【所有】碰撞到的實體標題"""
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
     headers = {"x-api-key": S2_API_KEY} if S2_API_KEY else {}
-    params = {"query": query_text[:120], "limit": 10, "fields": "citationCount"}
+    params = {"query": query_text[:120], "limit": 10, "fields": "citationCount,title"}
     
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
         response.raise_for_status()
+        data = response.json().get('data', [])
+        total_citations = sum(p.get('citationCount', 0) for p in data)
+        collisions = [p.get('title') for p in data] # 抓取所有命中的標題
+        return total_citations, collisions
     except requests.exceptions.RequestException as e:
         print(f"工具調用失敗，原因為 Semantic Scholar API 阻擋 ({str(e)})")
         sys.exit(1)
-        
-    return sum(p.get('citationCount', 0) for p in response.json().get('data', []))
 
-def validate_semantic_coherence(psi_global):
-    baseline_text = "Academic research paper, theoretical framework, engineering application, scientific methodology, ontology, topology."
-    baseline_vector = get_embedding(baseline_text)
-    sim = np.dot(psi_global, baseline_vector) / (np.linalg.norm(psi_global) * np.linalg.norm(baseline_vector))
-    if sim < 0.15: 
-        return False
-    return True
-
-def calculate_hexagram(psi_global, manifest):
-    # 強制綁定陣列順序，徹底解除 JSON Key 的順序依賴
-    ordered_dimensions = ["value_intent", "governance", "cognition", "architecture", "expansion", "application"]
-    hex_bits = ""
-    
-    for key in ordered_dimensions:
-        dim = manifest['dimensions'][key]
-        v_pos = get_embedding(dim['pos_def'])
-        v_neg = get_embedding(dim['neg_def'])
-        
-        sim_pos = np.dot(psi_global, v_pos) / (np.linalg.norm(psi_global) * np.linalg.norm(v_pos))
-        sim_neg = np.dot(psi_global, v_neg) / (np.linalg.norm(psi_global) * np.linalg.norm(v_neg))
-        hex_bits += "1" if sim_pos > sim_neg else "0"
-        
-    return hex_bits
-
-def generate_hologram_report(target_file, hex_code, energy, manifest):
-    hex_info = manifest['states'].get(hex_code, {"name": "未定義拓樸", "desc": "系統偵測到未知演化路徑，資訊熵溢出。"})
+def generate_trajectory_log(target_file, trajectory_data, bg_energy, collisions, hex_code, manifest):
+    """生成包含完整碰撞軌跡的 Log"""
+    hex_info = manifest['states'].get(hex_code, {"name": "未定義拓樸", "desc": "未知路徑。"})
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S CST")
+    stats = trajectory_data['vec_stats']
+    
+    # 動態組裝所有碰撞標題
+    collisions_text = "\n".join([f"    {i+1}. {title}" for i, title in enumerate(collisions)]) if collisions else "    無碰撞紀錄"
     
     return f"""
-### 📄 觀測目標：`{target_file}`
-* **語意時間戳**：`{timestamp}`
+## 📡 觀測軌跡：`{target_file}`
+* **物理時間戳**：`{timestamp}`
 
-#### 🌌 本體論六爻投影 
+### 1. 🌌 全文能勢集成 (Wave Function Integration)
+* **解析窗格數**：`{trajectory_data['window_count']} 視窗 (1500/800 Overlap)`
+* **1536維重心矩陣特徵**：
+    * `均值 (Mean)`：{stats['mean']:.8f}
+    * `標準差 (Std)`：{stats['std']:.8f}
+    * `模長 (L2 Norm)`：{stats['norm']:.8f}
+
+### 2. 🎯 語意重心提取 (Semantic Centroid Probe)
+* **重心相似度**：`{trajectory_data['centroid_sim']:.4f}`
+* **物理探針內容**：
+    > "{trajectory_data['probe_text']}..."
+
+### 3. 💥 場域碰撞分析 (Background Field Collision)
+* **探針場域回聲 (Probe Echo)**：`{bg_energy}` (引用質量總和)
+* **網格碰撞實體 (Full Collision Record)**：
+{collisions_text}
+
+### 4. 🧬 最終狀態坍縮 (Topological Collapse)
 * **狀態陣列**：`[{hex_code}]`
 * **物理相變**：**{hex_info['name']}**
-* **探針場域回聲 (Probe-based Field Echo)**：`{energy}` 
-  *(註：此數值由全文拓樸重心提取之 150 字探針，向外部學術網格檢索所得之引用質量總和，代表該拓樸座標的傳統阻尼強度)*
-
-#### 🧬 QTE 演化軌跡判讀
-> **{hex_info['desc']}**
-
-#### 📐 拓樸維度解析 (天地人)
-* **[天] 價值意圖與治理維度:** `[{hex_code[0]}, {hex_code[1]}]`
-* **[人] 認知深度與描述架構:** `[{hex_code[2]}, {hex_code[3]}]`
-* **[地] 擴張潛力與應用實相:** `[{hex_code[4]}, {hex_code[5]}]`
+* **學術指紋**：
+    > {hex_info['desc']}
 
 ---
 """
 
+def export_wordpress_html(basename, content, hex_code, state_name):
+    html_template = f"""
+<div class="avh-hologram-article">
+    <div class="avh-content">
+        {content.replace('\n', '<br>')}
+    </div>
+    <hr>
+    <div class="avh-seal" style="border: 2px solid #333; padding: 20px; background: #fafafa; margin-top: 30px;">
+        <p><strong>📡 本理論已通過 學術價值全像儀 (AVH) 認證</strong></p>
+        <p>當下演化狀態：[ {hex_code} ] - <strong>{state_name}</strong></p>
+        <p>語意時間戳：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+        <p><em>本體論底層協議保護 | 瀚菱管理顧問 AJ Consulting</em></p>
+    </div>
+</div>
+"""
+    with open(f'WP_Ready_{basename}.html', 'w', encoding='utf-8') as f:
+        f.write(html_template)
+
+def export_latex(basename, content, hex_code, state_name):
+    tex_template = r"""
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{xeCJK}
+\title{""" + basename + r"""}
+\author{Alaric Kuo}
+\date{\today}
+\begin{document}
+\maketitle
+\begin{abstract}
+本文章經由 AVH 學術價值全像儀觀測，當下演化狀態為 [""" + hex_code + r"""] """ + state_name + r"""。
+\end{abstract}
+""" + content.replace('#', '\section') + r"""
+\end{document}
+"""
+    with open(f'{basename}_Archive.tex', 'w', encoding='utf-8') as f:
+        f.write(tex_template)
+
 if __name__ == "__main__":
-    if not os.path.exists('qte_academic_manifest.json'):
-        print("工具調用失敗，原因為 遺失底層定義檔")
+    # 更新為 avh_manifest.json
+    if not os.path.exists('avh_manifest.json'):
+        print("工具調用失敗，原因為 遺失底層定義檔 (avh_manifest.json)")
         sys.exit(1)
         
-    with open('qte_academic_manifest.json', 'r', encoding='utf-8') as f:
+    with open('avh_manifest.json', 'r', encoding='utf-8') as f:
         manifest = json.load(f)
         
-    # 修正：同時狩獵 Markdown 與 LaTeX 原始碼
     source_files = []
     for ext in ["*.md", "*.tex"]:
-        source_files.extend([f for f in glob.glob(ext) if f.lower() not in ['readme.md', 'qte_observation_log.md']])
+        source_files.extend([f for f in glob.glob(ext) if f.lower() not in ['readme.md', 'avh_observation_log.md']])
     
     if not source_files:
-        print("系統休眠：未偵測到有效 Markdown 或 LaTeX 源碼波包。")
+        print("系統休眠：未偵測到有效理論源碼波包。")
         sys.exit(0)
         
-    print(f"\n🚀 啟動 QTE 引擎，共偵測到 {len(source_files)} 個波包等待坍縮...")
+    print(f"\n🚀 啟動 AVH 引擎，共偵測到 {len(source_files)} 個波包等待坍縮...")
     
-    # 準備寫入獨立的觀測日誌
-    with open('QTE_OBSERVATION_LOG.md', 'w', encoding='utf-8') as log_file:
-        log_file.write("# 📡 QTE 學術全像儀：多維觀測日誌\n")
-        log_file.write("*本報告由 QTE 底層協議自動生成，詳實紀錄各知識波包的拓樸狀態。*\n\n---\n")
+    # 更新為 AVH_OBSERVATION_LOG.md
+    with open('AVH_OBSERVATION_LOG.md', 'w', encoding='utf-8') as log_file:
+        log_file.write("# 📡 AVH 學術價值全像儀：多維觀測實作軌跡\n")
+        log_file.write("*本文件詳實紀錄方法論實作過程中，知識波包從高維向量到三維投影的每一處相變，作為不可篡改之演化鐵證。*\n\n---\n")
         
         last_hex_code = ""
-        
         for target_source in source_files:
-            # 使用全新的重心探針函數
-            probe_text, psi = extract_full_text_integral_fingerprint(target_source)
-            if psi is None: continue
+            trajectory_data = extract_ontological_trajectory(target_source)
+            if not trajectory_data: continue
             
-            if not validate_semantic_coherence(psi):
-                print(f"⚠️ {target_source} 邏輯崩潰，拒絕投影。")
-                continue
+            bg_energy, collisions = scan_background_field(trajectory_data['probe_text'])
+            
+            ordered_dimensions = ["value_intent", "governance", "cognition", "architecture", "expansion", "application"]
+            hex_bits = ""
+            psi = trajectory_data['psi_global']
+            
+            for key in ordered_dimensions:
+                dim = manifest['dimensions'][key]
+                v_pos = get_embedding(dim['pos_def'])
+                v_neg = get_embedding(dim['neg_def'])
                 
-            bg_energy = scan_background_field(probe_text)
-            hex_code = calculate_hexagram(psi, manifest)
-            last_hex_code = hex_code 
+                sim_pos = np.dot(psi, v_pos) / (np.linalg.norm(psi) * np.linalg.norm(v_pos))
+                sim_neg = np.dot(psi, v_neg) / (np.linalg.norm(psi) * np.linalg.norm(v_neg))
+                hex_bits += "1" if sim_pos > sim_neg else "0"
             
-            report = generate_hologram_report(target_source, hex_code, bg_energy, manifest)
+            last_hex_code = hex_bits
+            state_name = manifest['states'][hex_bits]['name']
+            
+            # 1. 寫入軌跡 Log
+            report = generate_trajectory_log(target_source, trajectory_data, bg_energy, collisions, hex_bits, manifest)
             log_file.write(report)
-            print(f"✅ {target_source} 物理投影完成！ [{hex_code}]")
+            
+            # 2. 輸出 WordPress HTML
+            basename = os.path.splitext(target_source)[0]
+            export_wordpress_html(basename, trajectory_data['full_text'], hex_bits, state_name)
+            
+            # 3. 輸出 LaTeX
+            export_latex(basename, trajectory_data['full_text'], hex_bits, state_name)
+            
+            print(f"✅ {target_source} 理論收斂完成！ [{hex_bits}]")
 
-    # 輸出環境變數給 CI/CD
     if last_hex_code:
         with open(os.environ.get('GITHUB_ENV', 'env.tmp'), 'a') as env_file:
             env_file.write(f"HEX_CODE={last_hex_code}\n")
