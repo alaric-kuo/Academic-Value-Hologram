@@ -8,10 +8,10 @@ from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
 from sentence_transformers import SentenceTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer
-import opencc
+import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V6.3.0 絕對意志：硬核引導與繁體強制鎮壓版)
+# AVH Genesis Engine (V6.3.1 絕對意志：硬核引導與 zhconv 純粹鎮壓版)
 # ==============================================================================
 
 print("🧠 [載入觀測核心] 正在啟動多語系拓樸網路 (paraphrase-multilingual-MiniLM)...")
@@ -29,9 +29,6 @@ try:
 except Exception as e:
     print("生成大腦載入失敗：" + str(e))
     sys.exit(1)
-
-# 初始化 OpenCC (簡體轉台灣繁體，包含慣用語轉換)
-cc = opencc.OpenCC('s2twp.json')
 
 def extract_ontological_trajectory(source_path):
     print("🌊 [波包顯化] 正在讀取源碼：" + source_path)
@@ -65,7 +62,7 @@ def extract_ontological_trajectory(source_path):
         
         print("✨ [論述顯化] 系統正在注入絕對意志，強制提煉硬核方法論...")
         
-        # [V6.3.0 系統提示詞升級] 強制要求 LLM 提取「方法」與「實相」，禁止流於哲學背景
+        # 強制要求 LLM 提取「方法」與「實相」，禁止流於哲學背景
         messages = [
             {
                 "role": "system", 
@@ -80,7 +77,6 @@ def extract_ontological_trajectory(source_path):
         text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         model_inputs = tokenizer([text], return_tensors="pt").to(llm_model.device)
         
-        # 放寬肺活量 (max_new_tokens) 到 600，確保論述不會被腰斬
         generated_ids = llm_model.generate(
             model_inputs.input_ids,
             max_new_tokens=600,
@@ -91,8 +87,8 @@ def extract_ontological_trajectory(source_path):
         generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)]
         raw_generated_summary = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
         
-        # [V6.3.0 物理鎮壓] 使用 OpenCC 將 LLM 吐出的任何簡體字/大陸慣用語，強制轉為純粹的台灣繁體
-        generated_summary = cc.convert(raw_generated_summary)
+        # [V6.3.1 物理鎮壓] 改用絕對穩定的 zhconv，將 LLM 吐出的文字強制轉為台灣繁體
+        generated_summary = zhconv.convert(raw_generated_summary, 'zh-tw')
         
         cohesive_wfs = [item[2] for item in core_chain_data]
         psi_global = np.mean(cohesive_wfs, axis=0)
