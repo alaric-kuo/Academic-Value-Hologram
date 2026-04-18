@@ -26,10 +26,10 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 📦 安裝開源神經網路 (純粹自我定位版)
+      - name: 📦 安裝開源神經網路與圖論引擎 (拓樸大腦版)
         run: |
           pip install --upgrade pip
-          pip install sentence-transformers numpy
+          pip install sentence-transformers numpy networkx scikit-learn
 
       - name: 🔮 啟動 AVH 引擎理論收斂
         run: python avh_core.py
@@ -39,7 +39,7 @@ jobs:
           git config --local user.email "avh-bot@aj-consulting.net"
           git config --local user.name "AVH Hologram Oracle"
           git add AVH_OBSERVATION_LOG.md
-          git commit -m "📡 AVH 軌跡刻印：純粹自我定位完成 [skip ci]" || echo "無相變發生"
+          git commit -m "📡 AVH 軌跡刻印：純粹邏輯定位完成 [skip ci]" || echo "無相變發生"
           git push
 
       - name: ⏳ 刻印語意時間戳與多維資產 (Create Semantic Release)
@@ -52,5 +52,5 @@ jobs:
             
             gh release create "$TAG_NAME" AVH_OBSERVATION_LOG.md *_Archive.tex WP_Ready_*.html \
               -t "狀態矩陣更新 - 演化時間戳 $TIMESTAMP" \
-              -n "知識本體已完成純粹自我收斂。\n包含：1. 實作軌跡日誌 2. HTML 實體 3. LaTeX 原始碼"
+              -n "知識本體已完成純粹邏輯收斂。\n包含：1. 實作軌跡日誌 2. HTML 實體 3. LaTeX 原始碼"
           fi
