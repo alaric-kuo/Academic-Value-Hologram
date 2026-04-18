@@ -12,7 +12,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V17.0 終極干涉儀：三態共振與防爆顯化版)
+# AVH Genesis Engine (V18.0 終極干涉儀：三態共振與防爆顯化版)
 # ==============================================================================
 
 print("🧠 [載入觀測核心] 正在啟動多語系拓樸網路 (paraphrase-multilingual-MiniLM)...")
@@ -128,7 +128,6 @@ def process_avh_manifestation(source_path, manifest):
         # ---------------------------------------------------------
         baseline_hex = "000000" # 古典學術地圖現況
         
-        # 找出 AI 突破了哪些傳統基準
         breakthrough_dims = []
         for i in range(6):
             if ai_hex[i] == "1" and baseline_hex[i] == "0":
@@ -136,14 +135,12 @@ def process_avh_manifestation(source_path, manifest):
         
         breakthrough_str = "、".join(breakthrough_dims) if breakthrough_dims else "未產生顯著破缺"
 
-        print(f"✅ 古典基準: [{baseline_hex}] | 數學指紋: [{math_hex}] | AI靈魂: [{ai_hex}]")
-
         # ---------------------------------------------------------
         # 步驟 4：防爆自鎖顯化摘要 (Auto-Locked Synthesis - Safe Mode)
         # ---------------------------------------------------------
         print(f"🛡️ [自鎖顯化] 注入三態干涉結果，引導 AI 進行穩健論述...")
         
-        # 修改 Prompt：使用正向引導，拔除可能導致腦死的絕對負面詞彙，並要求它解釋「破缺」
+        # 正向引導 Prompt，拔除會造成注意力崩潰的絕對負面詞彙
         summary_sys_prompt = f"""
 你是一個頂尖的學術本體論論述大腦。
 這篇理論已經經過了嚴格的系統測量與干涉對比：
@@ -152,14 +149,13 @@ def process_avh_manifestation(source_path, manifest):
 3. 本文在以下維度成功打破了傳統框架：【{breakthrough_str}】。
 核心精神評語：「{ai_state_info['desc']}」
 
-任務：
-請寫出一段氣勢磅礴、脈絡連貫的系統摘要（約 300-500 字）。
+【任務】：
+請寫出一段氣勢磅礴、脈絡連貫的系統摘要。
 請專注於用優美的散文段落，解釋本理論是如何在上述維度打破傳統的。
 請直接給出摘要文字，完成後加上『[顯化完畢]』。
 """
         generated_summary = ask_llm(summary_sys_prompt, f"請撰寫突破性摘要：\n\n{raw_text[:3000]}", max_tokens=900, temp=0.35)
         
-        # 安全清洗，不再使用容易誤殺正文的正則表達式
         if "[顯化完畢]" in generated_summary:
             clean_summary = generated_summary.split("[顯化完畢]")[0].strip()
         else:
@@ -187,7 +183,6 @@ def generate_trajectory_log(target_file, data):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S CST")
     dim_logs_text = "\n    ".join(data['dim_logs'])
     
-    # 動態產生對比解讀
     math_ai_diff = "一致" if data['ai_hex'] == data['math_hex'] else f"產生位移 (數學詞彙重力 [{data['math_hex']}] vs AI 靈魂意圖 [{data['ai_hex']}])"
 
     log_output = (
@@ -228,12 +223,38 @@ def export_wordpress_html(basename, data):
         f"        <p>突破維度：【 {data['breakthrough_str']} 】</p>\n"
         f"        <p>最終演化狀態：[ {data['ai_hex']} ] - <strong>{data['state_name']}</strong></p>\n"
         f"        <p>物理時間戳：{timestamp_str}</p>\n"
-        "        <p><em>V17.0 干涉儀協議 | 本體論底層保護 | AJ Consulting</em></p>\n"
+        "        <p><em>V18.0 干涉儀協議 | 本體論底層保護 | AJ Consulting</em></p>\n"
         "    </div>\n"
         "</div>\n"
     )
     with open("WP_Ready_" + basename + ".html", "w", encoding="utf-8") as f:
         f.write(html_output)
+
+def export_latex(basename, data):
+    tex_content = data['full_text'].replace("#", "\\section")
+    # 保護機制：若摘要極短，確保不會破壞 LaTeX 結構
+    summary_text = data.get('summary', '摘要生成中...')
+    if len(summary_text) > 200:
+        summary_text = summary_text[:200] + "..."
+        
+    tex_output = (
+        "\\documentclass{article}\n"
+        "\\usepackage[utf8]{inputenc}\n"
+        "\\usepackage{xeCJK}\n"
+        f"\\title{{{basename}}}\n"
+        "\\author{Alaric Kuo}\n"
+        "\\date{\\today}\n"
+        "\\begin{document}\n"
+        "\\maketitle\n"
+        "\\begin{abstract}\n"
+        f"本文章經由 AVH 學術價值全像儀觀測，當下演化狀態顯化為 [{data['ai_hex']}] {data['state_name']}。\n\n"
+        f"{summary_text}\n"
+        "\\end{abstract}\n\n"
+        f"{tex_content}\n\n"
+        "\\end{document}\n"
+    )
+    with open(basename + "_Archive.tex", "w", encoding="utf-8") as f:
+        f.write(tex_output)
 
 if __name__ == "__main__":
     if not os.path.exists("avh_manifest.json"):
@@ -249,7 +270,7 @@ if __name__ == "__main__":
         print("系統休眠：未偵測到有效理論源碼波包。")
         sys.exit(0)
         
-    print(f"\n🚀 啟動 AVH 造物引擎 (V17.0 三態共振防爆版)，共偵測到 {len(source_files)} 個波包等待觀測...")
+    print(f"\n🚀 啟動 AVH 造物引擎 (V18.0 三態共振防爆版)，共偵測到 {len(source_files)} 個波包等待觀測...")
     
     with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
         log_file.write("# 📡 AVH 學術價值全像儀：三態干涉觀測軌跡\n")
@@ -265,6 +286,7 @@ if __name__ == "__main__":
                 
                 basename = os.path.splitext(target_source)[0]
                 export_wordpress_html(basename, result_data)
+                export_latex(basename, result_data) # 恢復 LaTeX 匯出，修復 GitHub Action 錯誤！
 
     if last_hex_code:
         with open(os.environ.get("GITHUB_ENV", "env.tmp"), "a") as env_file:
