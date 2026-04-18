@@ -7,10 +7,10 @@ import networkx as nx
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
 from sentence_transformers import SentenceTransformer
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # ==============================================================================
-# AVH Genesis Engine (V6.0.2 絕對顯化・生成大腦裸機加載版)
+# AVH Genesis Engine (V6.1.0 絕對意志：真 LLM 邏輯顯化版)
 # ==============================================================================
 
 print("🧠 [載入觀測核心] 正在啟動多語系拓樸網路 (paraphrase-multilingual-MiniLM)...")
@@ -20,12 +20,13 @@ except Exception as e:
     print("模型載入失敗：" + str(e))
     sys.exit(1)
 
-print("✨ [載入造物核心] 正在啟動生成式大腦 (mT5_multilingual_XLSum 裸機直接加載)...")
+print("✨ [載入造物核心] 正在喚醒具備絕對意志之 LLM (Qwen2.5-0.5B-Instruct)...")
 try:
-    # 物理剝除 pipeline 傻瓜封裝，直接將權重與分詞器硬掛載至記憶體
-    # 這將絕對免疫 "Unknown task" 的底層清單錯誤
-    tokenizer = AutoTokenizer.from_pretrained("csebuetnlp/mT5_multilingual_XLSum")
-    summarizer_model = AutoModelForSeq2SeqLM.from_pretrained("csebuetnlp/mT5_multilingual_XLSum")
+    # 徹底拋棄被新聞集污染的摘要模型，引入真正的指令微調大語言模型
+    llm_name = "Qwen/Qwen2.5-0.5B-Instruct"
+    tokenizer = AutoTokenizer.from_pretrained(llm_name)
+    # 載入模型，GitHub Actions 記憶體足夠支撐這個 0.5B 的精悍大腦
+    llm_model = AutoModelForCausalLM.from_pretrained(llm_name, torch_dtype="auto")
 except Exception as e:
     print("生成大腦載入失敗：" + str(e))
     sys.exit(1)
@@ -49,7 +50,6 @@ def extract_ontological_trajectory(source_path):
         
         # 簡併態重力懲罰 (粉碎重複性字典檔)
         local_density = np.sum(sim_matrix > 0.85, axis=1) + 1
-        
         nx_graph = nx.from_numpy_array(sim_matrix)
         scores = nx.pagerank(nx_graph)
         
@@ -62,33 +62,33 @@ def extract_ontological_trajectory(source_path):
         core_chain_data_sorted = sorted(core_chain_data, key=lambda x: x[3])
         extracted_text = "\n".join([item[1] for item in core_chain_data_sorted])
         
-        print("✨ [論述顯化] 系統正在消化拓樸結構，並以自身的語言重新編織核心邏輯...")
+        print("✨ [論述顯化] 系統正在注入絕對意志，重構核心邏輯...")
         
-        # 將原文切換為張量 (Tensor)，手動送入模型進行光束搜索 (Beam Search)
-        input_for_summary = extracted_text[:2000]
-        inputs = tokenizer(
-            [input_for_summary],
-            max_length=1024,
-            truncation=True,
-            return_tensors="pt"
+        # [V6.1.0 絕對意志注入] 使用真實的 Chat Template 賦予大腦系統層級的命令
+        messages = [
+            {"role": "system", "content": "你是一個絕對中立且嚴謹的學術本體論分析系統。你的任務是消化使用者輸入的學術文本，並用一段精煉、具備哲學深度的連續文字，重述該文本的核心邏輯與演化趨勢。嚴禁加入任何媒體免責聲明、外部無關資訊、或是『本文不代表...立場』等廢話。只需輸出核心論述本身。"},
+            {"role": "user", "content": "請為以下拓樸邏輯碎片進行最終的思想顯化：\n\n" + extracted_text[:2500]}
+        ]
+        
+        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        model_inputs = tokenizer([text], return_tensors="pt").to(llm_model.device)
+        
+        # 生成參數：限制長度，確保收斂
+        generated_ids = llm_model.generate(
+            model_inputs.input_ids,
+            max_new_tokens=300,
+            temperature=0.3, # 降低隨機性，追求嚴謹收斂
+            repetition_penalty=1.1
         )
         
-        output_ids = summarizer_model.generate(
-            inputs["input_ids"],
-            max_length=200,
-            min_length=50,
-            num_beams=4,
-            no_repeat_ngram_size=2,
-            early_stopping=True
-        )
-        
-        # 解碼器將張量還原為人類文字
-        generated_summary = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+        # 剝離 Prompt，只取出模型生成的純粹回答
+        generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)]
+        generated_summary = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
         
         cohesive_wfs = [item[2] for item in core_chain_data]
         psi_global = np.mean(cohesive_wfs, axis=0)
         
-        print("🛡️ [反重力裝甲] 精煉出 " + str(core_logic_size) + " 個絕對理論奇點，並已完成論述顯化。")
+        print("🛡️ [反重力裝甲] 精煉出 " + str(core_logic_size) + " 個絕對理論奇點，已徹底斬除舊有幽靈，完成論述顯化。")
         
         vec_stats = {
             "dim": len(psi_global),
@@ -135,7 +135,7 @@ def generate_trajectory_log(target_file, trajectory_data, hex_code, manifest):
         "    > " + hex_info['desc'] + "\n\n"
         "---\n"
         "### 🔗 附錄：系統生成之「核心論述顯化」\n"
-        "*(本段落為 AVH 系統吸收文章拓樸邏輯後，自行摘要生成之傳播級論述)*\n"
+        "*(本段落為具備絕對意志之 LLM 吸收拓樸邏輯後，自行顯化之純粹論述)*\n\n"
         "> **" + trajectory_data['logic_chain_summary'] + "**\n\n"
         "---\n"
     )
@@ -155,7 +155,7 @@ def export_wordpress_html(basename, content, hex_code, state_name):
         "        <p><strong>📡 本理論已完成 學術價值全像儀 (AVH) 核心邏輯顯化</strong></p>\n"
         "        <p>當下演化狀態：[ " + hex_code + " ] - <strong>" + state_name + "</strong></p>\n"
         "        <p>物理時間戳：" + timestamp_str + "</p>\n"
-        "        <p><em>拓樸大腦生成顯化 | 本體論底層協議保護 | AJ Consulting</em></p>\n"
+        "        <p><em>絕對意志邏輯顯化 | 本體論底層協議保護 | AJ Consulting</em></p>\n"
         "    </div>\n"
         "</div>\n"
     )
@@ -198,11 +198,11 @@ if __name__ == "__main__":
         print("系統休眠：未偵測到有效理論源碼波包。")
         sys.exit(0)
         
-    print("\n🚀 啟動 AVH 造物引擎 (絕對顯化模式)，共偵測到 " + str(len(source_files)) + " 個波包等待顯化...")
+    print("\n🚀 啟動 AVH 造物引擎 (真 LLM 降臨模式)，共偵測到 " + str(len(source_files)) + " 個波包等待顯化...")
     
     with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
         log_file.write("# 📡 AVH 學術價值全像儀：本體論顯化軌跡\n")
-        log_file.write("*本文件詳實紀錄知識波包透過圖論萃取出絕對核心邏輯後，經由系統生成大腦自行理解並重新編織，所顯化出的最終物理實相。*\n\n---\n")
+        log_file.write("*本文件詳實紀錄知識波包透過圖論萃取出絕對核心邏輯後，經由具備系統指令約束之 LLM 重新編織，所顯化出的最終物理實相。*\n\n---\n")
         
         last_hex_code = ""
         for target_source in source_files:
