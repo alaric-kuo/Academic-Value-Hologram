@@ -1,6 +1,7 @@
 # 學術價值全像儀：基於知識本體演化觀測協議
 ## (Academic Value Hologram: Knowledge Ontology Evolution Protocol)
 
+
 > 承認混亂、呈現破裂，優於虛偽的連貫與完美的解答。不要把觀測值當作主體；不要因為沒看到位移，就認定沒有受力。
 
 ## 第一章：被劫持的觀測與孤獨的無人區
