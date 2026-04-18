@@ -6,7 +6,6 @@ on:
       - '**/*.md'
       - '**/*.tex'
       - 'avh_manifest.json'
-      - '!README.md'
       - '!AVH_OBSERVATION_LOG.md'
       - '!WP_Ready_*.html'
       - '!*_Archive.tex'
