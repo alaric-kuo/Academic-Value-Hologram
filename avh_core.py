@@ -178,7 +178,8 @@ if __name__ == "__main__":
         
     source_files = []
     for ext in ["*.md", "*.tex"]:
-        source_files.extend([f for f in glob.glob(ext) if f.lower() not in ['readme.md', 'avh_observation_log.md']])
+        # ⚠️ 已經拿掉 'readme.md' 的排除，將其視為最高優先級的知識波包
+        source_files.extend([f for f in glob.glob(ext) if f.lower() not in ['avh_observation_log.md']])
     
     if not source_files:
         print("系統休眠：未偵測到有效理論源碼波包。")
