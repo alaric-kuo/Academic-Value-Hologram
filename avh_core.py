@@ -2,25 +2,15 @@ import os
 import sys
 import json
 import glob
-import numpy as np
 from datetime import datetime
-from sklearn.metrics.pairwise import cosine_similarity
-from sentence_transformers import SentenceTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V12.0 純粹接地：摘要探針與原波包印證版)
+# AVH Genesis Engine (V13.0 純粹大腦：AI 全文識讀與接地版)
 # ==============================================================================
 
-print("🧠 [載入觀測核心] 正在啟動多語系拓樸網路 (paraphrase-multilingual-MiniLM)...")
-try:
-    embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-except Exception as e:
-    print("模型載入失敗：" + str(e))
-    sys.exit(1)
-
-print("✨ [載入造物核心] 正在喚醒具備收斂意志之 LLM (Qwen2.5-0.5B-Instruct)...")
+print("✨ [載入造物核心] 正在喚醒具備全文閱讀能力之 LLM (Qwen2.5-0.5B-Instruct)...")
 try:
     llm_name = "Qwen/Qwen2.5-0.5B-Instruct"
     tokenizer = AutoTokenizer.from_pretrained(llm_name)
@@ -29,92 +19,109 @@ except Exception as e:
     print("生成大腦載入失敗：" + str(e))
     sys.exit(1)
 
-def measure_avh_hex(vector, manifest):
-    """計算給定向量在 AVH 矩陣中的六十四卦指紋"""
-    ordered_dimensions = ["value_intent", "governance", "cognition", "architecture", "expansion", "application"]
-    hex_code = ""
-    for key in ordered_dimensions:
-        dim = manifest["dimensions"][key]
-        v_sin = embedding_model.encode([dim["sin_def"]])[0]
-        v_cos = embedding_model.encode([dim["cos_def"]])[0]
-        sim_sin = np.dot(vector, v_sin) / (np.linalg.norm(vector) * np.linalg.norm(v_sin))
-        sim_cos = np.dot(vector, v_cos) / (np.linalg.norm(vector) * np.linalg.norm(v_cos))
-        hex_code += "1" if sim_sin > sim_cos else "0"
-    return hex_code
+def ask_llm(system_prompt, user_prompt, max_tokens=800, temp=0.3):
+    """通用的 LLM 呼叫函式"""
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    model_inputs = tokenizer([text], return_tensors="pt").to(llm_model.device)
+    
+    generated_ids = llm_model.generate(
+        model_inputs.input_ids,
+        max_new_tokens=max_tokens,
+        temperature=temp,
+        repetition_penalty=1.15
+    )
+    
+    generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)]
+    raw_response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+    return zhconv.convert(raw_response, 'zh-tw')
 
-def process_grounded_validation(source_path, manifest):
-    print(f"\n🌊 [波包掃描] 正在讀取源碼：{source_path}")
+def process_ai_grounded_validation(source_path, manifest):
+    print(f"\n🌊 [大腦啟動] 正在讀取源碼：{source_path}")
     try:
         with open(source_path, 'r', encoding='utf-8') as file:
             raw_text = file.read()
             
-        paragraphs = [p.strip() for p in raw_text.split('\n') if len(p.strip()) > 30]
-        if len(paragraphs) < 3:
-            print(f"⚠️ {source_path} 文本結構過於單一，資訊熵不足。")
+        if len(raw_text) < 100:
+            print(f"⚠️ {source_path} 文本過短，無法進行脈絡識讀。")
             return None
             
+        # 將 Manifest 的定義轉換為 AI 可以理解的評分量表
+        dimension_prompts = ""
+        ordered_keys = ["value_intent", "governance", "cognition", "architecture", "expansion", "application"]
+        for idx, key in enumerate(ordered_keys):
+            dim = manifest["dimensions"][key]
+            dimension_prompts += f"維度 {idx+1} ({dim['layer']}):\n"
+            dimension_prompts += f" - [1] 離群突破: {dim['sin_def']}\n"
+            dimension_prompts += f" - [0] 守成合群: {dim['cos_def']}\n\n"
+            
         # ---------------------------------------------------------
-        # 步驟 1：測量原文直接指紋 (Source Fingerprint)
+        # 步驟 1：AI 全文識讀 (AI Determines the Source Fingerprint)
         # ---------------------------------------------------------
-        print("🕸️ [原文測量] 計算全域語意質心與直接指紋...")
-        embeddings = embedding_model.encode(paragraphs)
-        source_psi = np.mean(embeddings, axis=0)
-        source_hex = measure_avh_hex(source_psi, manifest)
+        print("👁️ [脈絡識讀] 放棄數學平均，由 AI 讀取全文並判定高維價值指紋...")
+        
+        eval_sys_prompt = (
+            "你是一個高維度的學術價值觀測儀。請閱讀使用者的全文，並根據以下六個維度的定義進行嚴格的二元判定。\n\n"
+            f"{dimension_prompts}"
+            "【絕對指令】：你只需輸出一串 6 個數字的代碼（只包含 0 或 1），代表這篇文章在這六個維度上的狀態。嚴禁輸出任何其他廢話或解釋。"
+            "例如，如果全部是突破，請輸出：111111。"
+        )
+        
+        eval_user_prompt = f"請判定以下文本的 6 位元指紋：\n\n{raw_text[:3000]}"
+        
+        raw_source_hex = ask_llm(eval_sys_prompt, eval_user_prompt, max_tokens=10, temp=0.1)
+        
+        # 清理 AI 輸出，確保只拿到 6 個數字
+        source_hex = ''.join(filter(lambda x: x in ['0', '1'], raw_source_hex))
+        if len(source_hex) != 6:
+            print(f"⚠️ AI 判定指紋格式錯誤 ({raw_source_hex})，強制設為預設值。")
+            source_hex = "000000"
+            
         source_state_name = manifest["states"].get(source_hex, {}).get("name", "未知狀態")
         
         # ---------------------------------------------------------
-        # 步驟 2：AI 探針摘要生成 (Probe Generation)
+        # 步驟 2：AI 探針摘要生成 (AI Synthesis based on its own finding)
         # ---------------------------------------------------------
-        print(f"🛡️ [探針生成] 指導 AI 根據直接指紋 [{source_hex}] 進行摘要收斂...")
+        print(f"🛡️ [探針生成] AI 已判定指紋為 [{source_hex}]。正在強制收斂生成摘要...")
         
-        system_prompt = f"""
+        summary_sys_prompt = f"""
 你是一個精準的學術本體論顯化器。
-經過系統測量，本文的「學術演化狀態」為：[{source_hex}] - {source_state_name}。
-這代表了本文的核心精神與突破方向。
+你已經判定本文的學術演化狀態為：[{source_hex}] - {source_state_name}。
+這代表了本文的核心精神與價值。
 
 請閱讀使用者的全文，並以繁體中文寫出一段精煉、連貫的系統摘要。
-你必須在摘要中，精準地捕捉並展現上述演化狀態的精神。
+你必須在摘要中，用人類能理解的脈絡，展現出這個演化狀態的精神與高維度價值。
 嚴禁產生條列式清單、嚴禁排版課表。論述完畢請強制輸出『[顯化完畢]』。
 """
-        user_prompt = f"請消化以下全文，並顯化為純粹的學術摘要探針：\n\n{raw_text[:2500]}"
+        summary_user_prompt = f"請消化以下全文，並顯化為純粹的學術摘要探針：\n\n{raw_text[:3000]}"
         
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
+        generated_summary = ask_llm(summary_sys_prompt, summary_user_prompt, max_tokens=800, temp=0.3)
         
-        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        model_inputs = tokenizer([text], return_tensors="pt").to(llm_model.device)
-        
-        generated_ids = llm_model.generate(
-            model_inputs.input_ids,
-            max_new_tokens=800,
-            temperature=0.3, 
-            repetition_penalty=1.15
-        )
-        
-        generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)]
-        raw_generated_summary = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
-        
-        if "[顯化完畢]" in raw_generated_summary:
-            raw_generated_summary = raw_generated_summary.split("[顯化完畢]")[0].strip()
-        
-        generated_summary = zhconv.convert(raw_generated_summary, 'zh-tw')
+        if "[顯化完畢]" in generated_summary:
+            generated_summary = generated_summary.split("[顯化完畢]")[0].strip()
         
         # ---------------------------------------------------------
         # 步驟 3：摘要探針的接地比對 (The Grounding Valve)
         # ---------------------------------------------------------
-        print("🧬 [接地比對] 正在測量 AI 摘要探針的指紋，驗證是否完美接地...")
-        summary_vec = embedding_model.encode([generated_summary])[0]
-        probe_hex = measure_avh_hex(summary_vec, manifest)
+        print("🧬 [接地比對] 正在讓 AI 回頭檢視自己的摘要，驗證是否發生偏移...")
+        
+        probe_user_prompt = f"請判定這段『摘要』的 6 位元指紋：\n\n{generated_summary}"
+        raw_probe_hex = ask_llm(eval_sys_prompt, probe_user_prompt, max_tokens=10, temp=0.1)
+        
+        probe_hex = ''.join(filter(lambda x: x in ['0', '1'], raw_probe_hex))
+        if len(probe_hex) != 6:
+            probe_hex = "000000"
+            
         probe_state_name = manifest["states"].get(probe_hex, {}).get("name", "未知狀態")
         
-        # 判斷是否接地 (指紋是否一致)
         is_grounded = (source_hex == probe_hex)
-        grounding_status = "✅ 完美接地 (探針指紋與原文絕對吻合)" if is_grounded else "⚠️ 發生偏移 (AI 摘要未能精準鎖定原文維度)"
+        grounding_status = "✅ 完美接地 (AI 摘要精準保留了原文的高維度價值)" if is_grounded else "⚠️ 發生偏移 (AI 在縮寫過程中丟失了部分維度的突破性)"
 
-        print(f"   - 原文指紋: [{source_hex}]")
-        print(f"   - 探針指紋: [{probe_hex}]")
+        print(f"   - AI 全文識讀指紋: [{source_hex}]")
+        print(f"   - AI 摘要探針指紋: [{probe_hex}]")
         print(f"   - 狀態: {grounding_status}")
 
         return {
@@ -137,13 +144,13 @@ def generate_trajectory_log(target_file, data):
     log_output = (
         f"## 📡 演化顯化軌跡：`{target_file}`\n"
         f"* **物理時間戳**：`{timestamp}`\n\n"
-        f"### 1. 🧬 邏輯接地比對 (Self-Consistency Validation)\n"
-        f"* **原文直接指紋**：`[{data['source_hex']}]` - **{data['source_name']}**\n"
-        f"* **AI 探針指紋**：`[{data['probe_hex']}]` - **{data['probe_name']}**\n"
+        f"### 1. 🧬 AI 全脈絡識讀與接地比對\n"
+        f"* **AI 判讀之全文指紋**：`[{data['source_hex']}]` - **{data['source_name']}**\n"
+        f"* **AI 判讀之探針指紋**：`[{data['probe_hex']}]` - **{data['probe_name']}**\n"
         f"* **接地狀態**：**{data['grounding_status']}**\n\n"
         f"---\n"
         f"### 2. 🧠 探針顯化摘要 (Probe Synthesis)\n"
-        f"*(本段落為 AI 消化全文後生成的摘要。透過反向計算此摘要的指紋，系統得以驗證 AI 是否產生語意幻覺。)*\n\n"
+        f"*(本段落為 AI 放棄數學矩陣，直接以神經網路生吞全文後，所提煉出之高維度論述。)*\n\n"
         f"> **{data['summary']}**\n\n"
         f"---\n"
     )
@@ -163,14 +170,14 @@ if __name__ == "__main__":
         print("系統休眠：未偵測到有效理論源碼波包。")
         sys.exit(0)
         
-    print(f"\n🚀 啟動 AVH 造物引擎 (V12.0 純粹接地版)，共偵測到 {len(source_files)} 個波包等待觀測...")
+    print(f"\n🚀 啟動 AVH 造物引擎 (V13.0 純粹大腦版)，共偵測到 {len(source_files)} 個波包等待觀測...")
     
     with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
-        log_file.write("# 📡 AVH 學術價值全像儀：邏輯接地驗證軌跡\n")
-        log_file.write("*本文件紀錄了最純粹的「一石二鳥」邏輯：系統先算出原文的直接指紋，再讓 AI 寫出摘要。最後，系統計算 AI 摘要的指紋進行比對。唯有兩者完全吻合，才代表 AI 真正讀懂了文本，實現了完美的邏輯接地。*\n\n---\n")
+        log_file.write("# 📡 AVH 學術價值全像儀：純粹大腦識讀軌跡\n")
+        log_file.write("*本文件徹底捨棄會將高維思想「平均化」的數學降維矩陣。改由 AI 大腦直接閱讀全文並賦予指紋，確保作者突破性的價值意圖能被完整捕捉，並實現真正的語意接地。*\n\n---\n")
         
         for target_source in source_files:
-            result_data = process_grounded_validation(target_source, manifest)
+            result_data = process_ai_grounded_validation(target_source, manifest)
             if result_data:
                 report = generate_trajectory_log(target_source, result_data)
                 log_file.write(report)
