@@ -232,3 +232,7 @@ with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
 if last_hex_code:
     with open(os.environ.get("GITHUB_ENV", "env.tmp"), "a") as env_file:
         env_file.write(f"HEX_CODE={last_hex_code}\n")
+```
+
+```
+```
