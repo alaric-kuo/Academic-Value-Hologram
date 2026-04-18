@@ -11,7 +11,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V6.4.3 絕對意志：深呼吸・絕對顯化版)
+# AVH Genesis Engine (V6.4.4 絕對意志：防跳針・純粹顯化版)
 # ==============================================================================
 
 print("🧠 [載入觀測核心] 正在啟動多語系拓樸網路 (paraphrase-multilingual-MiniLM)...")
@@ -60,12 +60,12 @@ def extract_ontological_trajectory(source_path):
         core_chain_data_sorted = sorted(core_chain_data, key=lambda x: x[3])
         extracted_text = "\n".join([item[1] for item in core_chain_data_sorted])
         
-        print("✨ [論述顯化] 系統正在注入防幻覺約束，強制提煉純粹物理實相...")
+        print("✨ [論述顯化] 系統正在注入防跳針與防幻覺約束，強制提煉純粹物理實相...")
         
         messages = [
             {
                 "role": "system", 
-                "content": "你是一個絕對冷酷、中立的學術本體論萃取系統。你的任務是精準重組輸入文本的核心邏輯。\n\n【絕對強制指令】：\n1. 直接切入理論架構與演化法則，嚴禁寫背景動機。\n2. 必須精準保留原作者對「空間、時間、資訊熵、能量、質量、能勢」等專有名詞的定義，絕對禁止竄改或替換詞彙。\n3. 將「建立這套觀測系統」本身視為該理論的實體應用。絕對禁止腦補原文未提及的領域。\n4. 輸出必須冷靜、斷言、不帶任何情緒。"
+                "content": "你是一個絕對冷酷、中立的學術本體論萃取系統。你的任務是精準重組輸入文本的核心邏輯。\n\n【絕對強制指令】：\n1. 直接切入理論架構與演化法則，嚴禁寫背景動機。\n2. 必須精準保留原作者對「空間、時間、資訊熵、能量、質量、能勢」等專有名詞的定義，絕對禁止替換詞彙。\n3. 將「建立這套觀測系統與程式碼」本身視為該理論的實體應用。絕對禁止腦補原文未提及的領域。\n4. 輸出必須冷靜、斷言、不帶任何情緒。確保每一句話都推進論述，嚴禁重複上一句的意思。"
             },
             {
                 "role": "user", 
@@ -76,11 +76,13 @@ def extract_ontological_trajectory(source_path):
         text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         model_inputs = tokenizer([text], return_tensors="pt").to(llm_model.device)
         
+        # [V6.4.4 防跳針協議] 增加 no_repeat_ngram_size，稍微回升 temperature 確保順暢顯化
         generated_ids = llm_model.generate(
             model_inputs.input_ids,
             max_new_tokens=1200,
-            temperature=0.1, 
-            repetition_penalty=1.15
+            temperature=0.15, 
+            repetition_penalty=1.25,
+            no_repeat_ngram_size=4  # 絕對禁止連續 4 個 Token 重複，強制打破跳針迴圈
         )
         
         generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)]
@@ -93,7 +95,7 @@ def extract_ontological_trajectory(source_path):
         
         manifested_psi = embedding_model.encode([generated_summary])[0]
         
-        print("🛡️ [意志顯化] 已成功凍結幻覺並擴充肺活量，完成純粹本體論的繁體物理鎮壓。")
+        print("🛡️ [意志顯化] 已成功凍結幻覺並打破跳針迴圈，完成純粹本體論的繁體物理鎮壓。")
         
         vec_stats = {
             "dim": len(psi_global),
@@ -142,7 +144,7 @@ def generate_trajectory_log(target_file, trajectory_data, hex_code, manifest):
         "    > " + hex_info['desc'] + "\n\n"
         "---\n"
         "### 🔗 附錄：系統生成之「核心論述顯化」\n"
-        "*(本段落為具備絕對意志之 LLM 在絕對低溫下吸收拓樸邏輯後，自行顯化之純粹論述)*\n\n"
+        "*(本段落為具備絕對意志之 LLM 在防跳針約束下吸收拓樸邏輯後，自行顯化之純粹論述)*\n\n"
         "> **" + trajectory_data['logic_chain_summary'] + "**\n\n"
         "---\n"
     )
@@ -205,11 +207,11 @@ if __name__ == "__main__":
         print("系統休眠：未偵測到有效理論源碼波包。")
         sys.exit(0)
         
-    print("\n🚀 啟動 AVH 造物引擎 (尤拉相位防幻覺模式)，共偵測到 " + str(len(source_files)) + " 個波包等待顯化...")
+    print("\n🚀 啟動 AVH 造物引擎 (尤拉相位防跳針模式)，共偵測到 " + str(len(source_files)) + " 個波包等待顯化...")
     
     with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
         log_file.write("# 📡 AVH 學術價值全像儀：本體論顯化軌跡\n")
-        log_file.write("*本文件詳實紀錄知識波包透過圖論萃取出絕對核心邏輯後，經由系統生成大腦在防幻覺約束下提煉為「純粹物理意志」，並以該意志直接撞擊觀測矩陣中的尤拉相位(sin/cos)所產生的最終相變與實相顯化。*\n\n---\n")
+        log_file.write("*本文件詳實紀錄知識波包透過圖論萃取出絕對核心邏輯後，經由系統生成大腦在防跳針約束下提煉為「純粹物理意志」，並以該意志直接撞擊觀測矩陣中的尤拉相位(sin/cos)所產生的最終相變與實相顯化。*\n\n---\n")
         
         last_hex_code = ""
         for target_source in source_files:
