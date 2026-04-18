@@ -1,4 +1,4 @@
-name: AVH Semantic Timestamp Pipeline
+name: AVH Semantic Manifestation Pipeline
 
 on:
   push:
@@ -21,28 +21,28 @@ jobs:
       - name: 🛰️ 載入宇宙網格
         uses: actions/checkout@v4
 
-      - name: 🐍 部署算力引擎
+      - name: 🐍 部署造物引擎
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: 📦 安裝開源神經網路與圖論引擎 (拓樸大腦版)
+      - name: 📦 安裝多語系神經網路與生成大腦 (絕對顯化版)
         run: |
           pip install --upgrade pip
-          pip install sentence-transformers numpy networkx scikit-learn
+          pip install sentence-transformers numpy networkx scikit-learn transformers torch sentencepiece tf-keras
 
-      - name: 🔮 啟動 AVH 引擎理論收斂
+      - name: 🔮 啟動 AVH 引擎理論顯化
         run: python avh_core.py
 
-      - name: 🚩 資訊熵同步 (Commit 觀測日誌)
+      - name: 🚩 資訊熵同步 (Commit 顯化日誌)
         run: |
           git config --local user.email "avh-bot@aj-consulting.net"
           git config --local user.name "AVH Hologram Oracle"
           git add AVH_OBSERVATION_LOG.md
-          git commit -m "📡 AVH 軌跡刻印：純粹邏輯定位完成 [skip ci]" || echo "無相變發生"
+          git commit -m "📡 AVH 軌跡刻印：本體論顯化完成 [skip ci]" || echo "無相變發生"
           git push
 
-      - name: ⏳ 刻印語意時間戳與多維資產 (Create Semantic Release)
+      - name: ⏳ 刻印實相時間戳與多維資產 (Create Semantic Release)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -51,6 +51,6 @@ jobs:
             TAG_NAME="AVH-State-${HEX_CODE}-${TIMESTAMP}"
             
             gh release create "$TAG_NAME" AVH_OBSERVATION_LOG.md *_Archive.tex WP_Ready_*.html \
-              -t "狀態矩陣更新 - 演化時間戳 $TIMESTAMP" \
-              -n "知識本體已完成純粹邏輯收斂。\n包含：1. 實作軌跡日誌 2. HTML 實體 3. LaTeX 原始碼"
+              -t "狀態張量更新 - 物理時間戳 $TIMESTAMP" \
+              -n "知識本體已完成絕對顯化。\n包含：1. 顯化軌跡與生成摘要 2. HTML 實體 3. LaTeX 原始碼"
           fi
