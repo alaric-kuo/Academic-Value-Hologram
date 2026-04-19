@@ -12,13 +12,13 @@ from openai import OpenAI
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V27.0 聯集能勢場與三角校正 - 單發突破版)
+# AVH Genesis Engine (V27.1 聯集能勢場 - 摘要減壓與延長射程版)
 # ==============================================================================
 
 LLM_MODEL_NAME = 'openai/gpt-4o'
 MD_FENCE = "`" * 3
 
-print(f"🧠 [載入觀測核心] 啟動 V27.0 高維度大腦矩陣 ({LLM_MODEL_NAME})...")
+print(f"🧠 [載入觀測核心] 啟動 V27.1 高維度大腦矩陣 ({LLM_MODEL_NAME})...")
 
 def get_llm_client():
     token = os.environ.get("COPILOT_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -59,27 +59,28 @@ def parse_llm_json(response_text):
         sys.exit(1)
 
 def fetch_field_papers_union(keywords, limit=8):
-    """【V27.0 核心】使用 OR 聯集查詢，一發 API 呼叫抓取全域背景"""
-    headers = {"User-Agent": "AVH-Hologram/27.0 (GitHub Actions)"}
+    """【V27.1 核心】使用 OR 聯集查詢，限縮摘要範圍並延長等待，打穿 arXiv 防火牆"""
+    headers = {"User-Agent": "AVH-Hologram/27.1 (GitHub Actions)"}
     namespace = {'atom': 'http://www.w3.org/2005/Atom'}
     
-    # 建立聯集查詢字串：all:A OR all:B OR ...
-    search_query = " OR ".join([f"all:{kw}" for kw in keywords])
+    # 💥 從全域 (all) 降階為摘要 (abs)，減輕 arXiv 伺服器運算負擔
+    search_query = " OR ".join([f"abs:{kw}" for kw in keywords])
     encoded_query = urllib.parse.quote(search_query)
     
     url = (f"https://export.arxiv.org/api/query?"
            f"search_query={encoded_query}&start=0&max_results={limit}"
            f"&sortBy=submittedDate&sortOrder=descending")
     
-    print(f"🌍 [場域建構] 發射全域聯集探測網 (1發 API 突破限流)...")
+    print(f"🌍 [場域建構] 發射全域聯集探測網 (限縮摘要範圍，延長連線耐受度)...")
     field_papers = []
     
     for attempt in range(3):
         try:
-            response = requests.get(url, headers=headers, timeout=15)
+            # 💥 Timeout 延長到 45 秒
+            response = requests.get(url, headers=headers, timeout=45)
             if response.status_code in [403, 429]:
-                print(f"⚠️ 觸發 arXiv 限流 (HTTP {response.status_code})，退避 5 秒...")
-                time.sleep(5)
+                print(f"⚠️ 觸發 arXiv 限流 (HTTP {response.status_code})，退避 10 秒...")
+                time.sleep(10)
                 continue
                 
             response.raise_for_status()
@@ -97,8 +98,8 @@ def fetch_field_papers_union(keywords, limit=8):
             break # 成功抓取整批，跳出重試
         except Exception as e:
             if attempt == 2:
-                print(f"⚠️ 聯集探測網失去連線 ({e})")
-            time.sleep(3)
+                print(f"⚠️ 聯集探測網徹底失去連線 ({e})")
+            time.sleep(5)
             
     return field_papers, search_query
 
@@ -287,7 +288,7 @@ def generate_trajectory_log(target_file, data):
         f"**詳細本體測量儀表板**：\n"
         f"    {dim_logs_text}\n\n"
         f"---\n"
-        f"> *註：本報告採 V27.0 全域聯集能勢場干涉測量。*\n"
+        f"> *註：本報告採 V27.1 全域聯集能勢場干涉測量。*\n"
     )
     return log_output
 
@@ -351,7 +352,7 @@ if __name__ == "__main__":
         sys.exit(0)
         
     with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
-        log_file.write("# 📡 AVH 學術價值全像儀：V27 聯集能勢場觀測日誌\n---\n")
+        log_file.write("# 📡 AVH 學術價值全像儀：V27.1 聯集能勢場觀測日誌\n---\n")
         last_hex_code = ""
         for target_source in source_files:
             result_data = process_avh_manifestation(target_source, manifest)
