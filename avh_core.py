@@ -15,7 +15,7 @@ from openai import OpenAI
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V24.1 檔案保全與 arXiv 防火牆強化版)
+# AVH Genesis Engine (V24.2 終極無損版：檔案保全、arXiv 防火牆與 LaTeX 防爆)
 # ==============================================================================
 
 print("🧠 [載入觀測核心] 正在啟動 IQD 物理差分矩陣 (paraphrase-multilingual-MiniLM)...")
@@ -46,7 +46,7 @@ def call_arxiv_scholar(query, limit=5):
     
     # 加上 UA，防止被當作不友善腳本阻擋
     headers = {
-        "User-Agent": "AVH-Hologram/24.1 (GitHub Actions)"
+        "User-Agent": "AVH-Hologram/24.2 (GitHub Actions)"
     }
     
     try:
@@ -250,13 +250,22 @@ def export_latex(basename, data):
     tex_content = data['full_text'].replace("#", "\\section")
     summary_text = data.get('summary', '')[:300] + "..." if len(data.get('summary', '')) > 300 else data.get('summary', '')
     
+    # 徹底隔離 Python f-string 與 LaTeX 原生大括號
     tex_output = (
-        "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{xeCJK}\n"
-        f"\\title{{{basename}}}\n\\author{{Alaric Kuo}}\n\\date{{\\today}}\n"
-        "\\begin{document}\n\\maketitle\n\\begin{abstract}\n"
-        f"[{data['user_hex']}] {data['state_name']}。\n\n{summary_text}\n"
+        "\\documentclass{article}\n"
+        "\\usepackage[utf8]{inputenc}\n"
+        "\\usepackage{xeCJK}\n"
+        f"\\title{{{basename}}}\n"
+        "\\author{Alaric Kuo}\n"
+        "\\date{\\today}\n"
+        "\\begin{document}\n"
+        "\\maketitle\n"
+        "\\begin{abstract}\n"
+        f"[{data['user_hex']}] {data['state_name']}。\n\n"
+        f"{summary_text}\n"
         "\\end{abstract}\n\n"
-        f"{tex_content}\n\n\\end{document}\n"
+        f"{tex_content}\n\n"
+        "\\end{document}\n"
     )
     with open(f"{basename}_Archive.tex", "w", encoding="utf-8") as f:
         f.write(tex_output)
