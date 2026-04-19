@@ -1,55 +1,54 @@
-name: AVH Hologram Engine (V23.0)
+name: AVH Hologram Engine (V24.1)
 
-# 觸發條件：當推送到 main 分支，或手動點擊執行時觸發
 on:
   push:
     branches:
       - main
     paths:
-      - '*.md' # 只有當 Markdown 理論檔案變動時才觸發，節省算力
-  workflow_dispatch: # 允許在 Actions 頁面手動點擊 "Run workflow"
+      - '*.md'
+      - '*.py'
+      - '.github/workflows/*.yml'
+  workflow_dispatch: 
 
 jobs:
   avh-manifestation:
+    # 🛑 【防禦死循環】：拒絕機器人觸發，只有人類推的 Code 才會跑！
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
 
-    # 🛑 【核心防禦解鎖】：這是整套系統能跑通的靈魂！
     permissions:
-      contents: write   # 允許 GitHub Actions 把產生的報表檔案推回你的 Repo
-      models: read      # 2026 GitHub Models 專屬授權，允許 GITHUB_TOKEN 呼叫 Copilot 算力
+      contents: write   
+      models: read      
 
     steps:
-      - name: 📥 Checkout Repository (讀取波包)
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🐍 Setup Python 3.11 (架設物理環境)
+      - name: 🐍 Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 📦 Install Dependencies (安裝觀測儀器)
+      - name: 📦 Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install numpy networkx scikit-learn sentence-transformers openai requests zhconv
 
-      - name: 🚀 Run AVH Genesis Engine (啟動三態干涉與顯化)
+      - name: 🚀 Run AVH Genesis Engine
         env:
-          # GITHUB_TOKEN 會由 Action 系統自動派發，並自動繼承上方的 models: read 權限
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # (選填) Semantic Scholar API Key，請在 Repo Settings -> Secrets and variables -> Actions 中設定
-          SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
-        # 假設你的主程式檔名為 avh_engine.py，請確認檔名一致
         run: |
           python avh_core.py
 
-      - name: 💾 Commit and Push Artifacts (實相刻印與檔案回收)
+      - name: 💾 Commit and Push Artifacts (實相刻印)
         run: |
-          # 設定 Git 機器人身份
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # 將所有新產生的報表加入追蹤
-          git add AVH_OBSERVATION_LOG.md WP_Ready_*.html *_Archive.tex
-          
-          # 檢查是否有檔案變動，如果有才執行 Commit 與 Push，避免報錯
-          git diff --quiet && git diff --staged --quiet || (git commit -m "🌌 系統自動顯化：AVH 實體聯網與 Copilot 觀測結果" && git push)
+          # 【防止檔案消失】：安全地檢查檔案是否存在，存在才加入追蹤，不存在也不會報錯中斷
+          [ -f AVH_OBSERVATION_LOG.md ] && git add AVH_OBSERVATION_LOG.md || true
+          compgen -G "WP_Ready_*.html" > /dev/null && git add WP_Ready_*.html || true
+          compgen -G "*_Archive.tex" > /dev/null && git add *_Archive.tex || true
+
+          # 檢查快取是否有變動，有的話才執行 commit 與 push
+          git diff --cached --quiet || (git commit -m "🌌 系統自動顯化：arXiv 實體聯網與 GitHub Models 觀測結果" && git push)
