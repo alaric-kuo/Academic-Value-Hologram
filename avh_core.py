@@ -15,7 +15,7 @@ from openai import OpenAI
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V24.4 終極審計版：分艙隔離與觀測樣本透明化)
+# AVH Genesis Engine (V24.6 真實語意降階與破裂坦承版)
 # ==============================================================================
 
 EMBEDDING_MODEL_NAME = 'paraphrase-multilingual-MiniLM-L12-v2'
@@ -28,13 +28,9 @@ except Exception as e:
     print(f"工具調用失敗，原因為 本地向量模型載入錯誤 ({e})")
     sys.exit(1)
 
-def call_arxiv_scholar(query, limit=5):
-    print(f"🌍 [實體觀測] 轉向 arXiv 資料庫抓取前沿文獻，關鍵字：[{query}]...")
-    terms = re.findall(r'[A-Za-z]{4,}', query)[:3]
-    if not terms:
-        terms = ["System", "Engineering", "Entropy"]
-
-    search_query = "+AND+".join([f"all:{t}" for t in terms])
+def fetch_arxiv_papers(query_terms, limit=10):
+    """底層 arXiv 呼叫引擎，不含任何 Hard Code"""
+    search_query = "+AND+".join([f"all:{t}" for t in query_terms])
     encoded_query = urllib.parse.quote(search_query, safe=":+")
     
     url = (
@@ -42,21 +38,19 @@ def call_arxiv_scholar(query, limit=5):
         f"search_query={encoded_query}&start=0&max_results={limit}"
         f"&sortBy=submittedDate&sortOrder=descending"
     )
-    
-    headers = {"User-Agent": "AVH-Hologram/24.4 (GitHub Actions)"}
+    headers = {"User-Agent": "AVH-Hologram/24.6 (GitHub Actions)"}
     
     try:
         response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
-        
         root = ET.fromstring(response.content)
         namespace = {'atom': 'http://www.w3.org/2005/Atom'}
         
-        papers = []
+        raw_papers = []
         for entry in root.findall('atom:entry', namespace):
             title_node = entry.find('atom:title', namespace)
             abstract_node = entry.find('atom:summary', namespace)
-            id_node = entry.find('atom:id', namespace) # 新增：抓取 arXiv ID 供審計
+            id_node = entry.find('atom:id', namespace)
             
             if title_node is None or abstract_node is None:
                 continue
@@ -64,30 +58,64 @@ def call_arxiv_scholar(query, limit=5):
             title = title_node.text.strip().replace('\n', ' ')
             abstract = abstract_node.text.strip().replace('\n', ' ')
             paper_id = id_node.text.split('/')[-1] if id_node is not None else "Unknown"
+            raw_papers.append({"id": paper_id, "title": title, "abstract": abstract})
             
-            papers.append({"id": paper_id, "title": title, "abstract": abstract})
-            
-        if not papers:
-            print("⚠️ [警告] arXiv 未找到相關文獻，將退回預設保守基準。")
-            
-        return papers, search_query.replace("+AND+", " AND ")
-
+        return raw_papers, search_query.replace("+AND+", " AND ")
     except Exception as e:
-        print(f"工具調用失敗，原因為 arXiv API 遭遇超時或阻擋 ({e})")
-        sys.exit(1)
+        print(f"⚠️ arXiv API 呼叫異常 ({e})")
+        return [], "API Error"
+
+def get_valid_baseline(extracted_words):
+    """真實語意降階邏輯：拒絕塞詞，無對應則坦承破裂"""
+    if len(extracted_words) < 2:
+        return [], "無法從核心波包提取足夠的檢索維度", 0, "Observation Fracture (提取破裂)"
+
+    domain_keywords = ["academic", "research", "evaluation", "governance", "knowledge", "scholarly", "trust", "epistemic", "system", "entropy", "topology"]
+    
+    # 【Tier 1：精準打擊】使用前 3 個字
+    tier1_terms = extracted_words[:3]
+    print(f"🌍 [實體觀測] Tier 1 精準檢索，關鍵字：{tier1_terms}...")
+    raw_papers, actual_query = fetch_arxiv_papers(tier1_terms)
+    
+    valid_papers = []
+    for p in raw_papers:
+        text_to_check = (p['title'] + " " + p['abstract']).lower()
+        if any(k in text_to_check for k in domain_keywords):
+            valid_papers.append(p)
+            if len(valid_papers) == 5:
+                break
+                
+    if len(valid_papers) >= 2:
+        return valid_papers, actual_query, len(raw_papers), "Valid (Tier 1 命中)"
+
+    # 【Tier 2：次要語意降階】如果文章字數夠，使用第 2 到第 4 個字
+    if len(extracted_words) >= 4:
+        tier2_terms = extracted_words[1:4]
+        print(f"⚠️ [降階觀測] Tier 1 查無實質對應，降階至次要語意：{tier2_terms}...")
+        raw_papers, actual_query = fetch_arxiv_papers(tier2_terms)
+        
+        valid_papers = []
+        for p in raw_papers:
+            text_to_check = (p['title'] + " " + p['abstract']).lower()
+            if any(k in text_to_check for k in domain_keywords):
+                valid_papers.append(p)
+                if len(valid_papers) == 5:
+                    break
+                    
+        if len(valid_papers) >= 2:
+            return valid_papers, actual_query, len(raw_papers), "Valid (Tier 2 降階命中)"
+
+    # 【坦承破裂】如果還是沒有，絕對不塞 Hard Code
+    return [], actual_query, len(raw_papers), "Observation Fracture (觀測破裂：查無同頻文獻)"
 
 def call_copilot_brain(system_prompt, user_prompt):
     token = os.environ.get("COPILOT_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if not token:
-        print("工具調用失敗，原因為 遺失 GITHUB_TOKEN，無法驗證 GitHub Models")
+        print("工具調用失敗，原因為 遺失 GITHUB_TOKEN")
         sys.exit(1)
         
     print(f"🧠 [雲端大腦] 正在連線 GitHub Models Inference ({LLM_MODEL_NAME})...")
-    
-    client = OpenAI(
-        base_url="https://models.github.ai/inference",
-        api_key=token,
-    )
+    client = OpenAI(base_url="https://models.github.ai/inference", api_key=token)
     
     try:
         response = client.chat.completions.create(
@@ -96,12 +124,12 @@ def call_copilot_brain(system_prompt, user_prompt):
                 {"role": "user", "content": user_prompt}
             ],
             model=LLM_MODEL_NAME, 
-            temperature=0.2, # 降低溫度，強迫它更客觀
+            temperature=0.2,
             max_tokens=800
         )
         return zhconv.convert(response.choices[0].message.content.strip(), 'zh-tw')
     except Exception as e:
-        print(f"工具調用失敗，原因為 GitHub Models API 呼叫被阻擋或發生錯誤 ({e})")
+        print(f"工具調用失敗，原因為 GitHub Models API 呼叫錯誤 ({e})")
         sys.exit(1)
 
 def compute_iqd_hex(text_vec, manifest):
@@ -142,30 +170,25 @@ def process_avh_manifestation(source_path, manifest):
         
         nx_graph = nx.from_numpy_array(sim_matrix)
         scores = nx.pagerank(nx_graph)
-        
         ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         peak_embeddings = [embeddings[i] for i in ranked_indices[:3]]
         psi_peak = np.mean(peak_embeddings, axis=0) 
-        
         top_sentence = paragraphs[ranked_indices[0]]
 
-        # 1. 測量絕對指紋
-        print("🕸️ [IQD 差分] 計算文本巔峰之物理絕對指紋...")
+        print("🕸️ [IQD 差分] 計算絕對指紋...")
         user_hex, dim_logs = compute_iqd_hex(psi_peak, manifest)
         user_state_info = manifest["states"].get(user_hex, {"name": "未知狀態", "desc": "缺乏觀測紀錄"})
 
-        # 2. arXiv 真實基準與觀測樣本清單
-        keywords = " ".join(re.findall(r'\b[A-Za-z]{4,}\b', top_sentence)[:3]) 
-        if not keywords:
-            keywords = "System Engineering Entropy"
-            
-        papers, actual_query = call_arxiv_scholar(keywords)
+        # 擷取純文本字彙進行動態降階搜尋
+        extracted_words = re.findall(r'\b[A-Za-z]{4,}\b', top_sentence)
+        valid_papers, actual_query, raw_hits, baseline_status = get_valid_baseline(extracted_words)
+        
         baseline_hex_votes = []
         vote_stats = [0]*6 
-        paper_records = [] # 新增：存放用於 Log 顯示的文獻清單
+        paper_records = []
         
-        if papers:
-            for p in papers:
+        if "Valid" in baseline_status:
+            for p in valid_papers:
                 p_vec = embedding_model.encode([p["abstract"]])[0]
                 p_hex, _ = compute_iqd_hex(p_vec, manifest)
                 baseline_hex_votes.append(p_hex)
@@ -176,27 +199,27 @@ def process_avh_manifestation(source_path, manifest):
                 
             baseline_hex = ""
             for i in range(6):
-                baseline_hex += "1" if vote_stats[i] > (len(papers) / 2) else "0"
+                baseline_hex += "1" if vote_stats[i] > (len(valid_papers) / 2) else "0"
         else:
+            # 呈現破裂
             baseline_hex = "000000"
-            actual_query = "Fallback (無網路或無結果)"
-            paper_records.append("- (無實體文獻參與觀測)")
+            paper_records.append(f"- (原始抓取 {raw_hits} 篇，但均無法與本體論產生語意共振)")
+            paper_records.append("- (系統坦承觀測破裂，無法建立有效外部基準)")
 
-        # 3. 雲端大腦：只負責產生「導讀摘要」(保留給 HTML，Log 內只留客觀解讀)
         breakthrough_dims = [manifest["dimensions"][list(manifest["dimensions"].keys())[i]]["layer"] 
                              for i in range(6) if user_hex[i] == "1" and baseline_hex[i] == "0"]
-        breakthrough_str = "、".join(breakthrough_dims) if breakthrough_dims else "與傳統基準同頻"
+        
+        if "Valid" not in baseline_status:
+            breakthrough_str = "基準破裂，無法進行相對維度測量"
+        else:
+            breakthrough_str = "、".join(breakthrough_dims) if breakthrough_dims else "與傳統基準同頻"
         
         sys_prompt = f"""
 你是一位專注於系統工程與物理本體論的客觀解讀者。
-本理論經過 arXiv 實體文獻對比，已確認在以下維度突破傳統工程框架：【{breakthrough_str}】。
+本理論經過實體文獻對比，測量狀態為：【{baseline_status}】。
 理論狀態定位為：{user_state_info['name']}。
-
-請根據下文撰寫約 200 字的「理論導讀摘要」。
-要求：
-1. 語氣客觀，禁止使用任何宣傳式修辭（如革新、顛覆、偉大）。
-2. 專注解釋理論核心如何運作。
-3. 第一句話必須以「本理論架構...」開頭。
+請根據下文撰寫約 200 字的「理論導讀摘要」。語氣客觀，禁止使用宣傳式修辭。
+第一句話必須以「本理論架構...」開頭。
 """
         clean_summary = call_copilot_brain(sys_prompt, raw_text[:3000])
 
@@ -209,11 +232,13 @@ def process_avh_manifestation(source_path, manifest):
             "summary": clean_summary,
             "full_text": raw_text,
             "meta_data": {
-                "top_sentence": top_sentence[:100] + "..." if len(top_sentence) > 100 else top_sentence,
+                "top_sentence": top_sentence[:100] + "...",
                 "arxiv_query": actual_query,
-                "papers_hit": len(papers) if papers else 0,
+                "raw_hits": raw_hits,
+                "valid_hits": len(valid_papers),
                 "paper_records": paper_records,
                 "vote_stats": vote_stats,
+                "baseline_status": baseline_status,
                 "embedding_model": EMBEDDING_MODEL_NAME,
                 "llm_model": LLM_MODEL_NAME
             }
@@ -227,9 +252,12 @@ def generate_trajectory_log(target_file, data):
     dim_logs_text = "\n    ".join(data['dim_logs'])
     meta = data['meta_data']
     papers_text = "\n".join(meta['paper_records'])
-    vote_str = " | ".join([f"Dim{i+1}: {meta['vote_stats'][i]}/{meta['papers_hit']}" for i in range(6)])
+    
+    if "Valid" in meta['baseline_status']:
+        vote_str = " | ".join([f"Dim{i+1}: {meta['vote_stats'][i]}/{meta['valid_hits']}" for i in range(6)])
+    else:
+        vote_str = "觀測破裂，無基準數據"
 
-    # 【核心改動】：拔除 LLM 旁白，補上可審計的 arXiv 論文清單
     log_output = (
         f"## 📡 AVH 技術觀測日誌：`{target_file}`\n"
         f"* **觀測時間戳 (CST)**：`{timestamp}`\n"
@@ -237,14 +265,15 @@ def generate_trajectory_log(target_file, data):
         f"---\n"
         f"### 1. 🔬 觀測參數與基準建立 (Observation Parameters)\n"
         f"* **原著核心波包 (Peak Sentence)**：\n  > *\"{meta['top_sentence']}\"*\n"
-        f"* **arXiv 檢索條件 (Query)**：`{meta['arxiv_query']}`\n"
-        f"* **arXiv 基準樣本 (Hits: {meta['papers_hit']})**：\n"
+        f"* **動態檢索條件 (Query)**：`{meta['arxiv_query']}`\n"
+        f"* **基準校準狀態**：`{meta['baseline_status']}`\n"
+        f"* **有效觀測樣本**：\n"
         f"{papers_text}\n\n"
         f"* **基準矩陣投票統計**：`[ {vote_str} ]`\n"
         f"* 🗺️ **外部真實基準 (Baseline Hex)**：`[{data['baseline_hex']}]`\n\n"
         f"### 2. ⚖️ IQD 差分干涉結果 (Interference Results)\n"
         f"* 🛡️ **本體論絕對指紋**：`[{data['user_hex']}]` - **{data['state_name']}**\n"
-        f"* 🌌 **拓樸破缺維度 (相對於 arXiv)**：**【{data['breakthrough_str']}】**\n\n"
+        f"* 🌌 **拓樸破缺維度 (相對於有效基準)**：**【{data['breakthrough_str']}】**\n\n"
         f"**詳細差分儀表板**：\n"
         f"    {dim_logs_text}\n\n"
         f"---\n"
@@ -257,7 +286,6 @@ def export_wordpress_html(basename, data):
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     meta = data['meta_data']
     
-    # 【核心改動】：將 LLM 的「導讀摘要」專門放在這裡，做對外展示用
     html_output = (
         "<div class=\"avh-hologram-article\">\n"
         "    <div class=\"avh-content\">\n"
@@ -268,7 +296,7 @@ def export_wordpress_html(basename, data):
         "        <h3>📡 學術價值全像儀 (AVH) 實體觀測認證</h3>\n"
         f"        <p><strong>理論導讀摘要 (Generated by {meta['llm_model']})：</strong><br>{data['summary']}</p>\n"
         "        <hr>\n"
-        f"        <p>觀測基準：arXiv 前沿文獻 (樣本數：{meta['papers_hit']})</p>\n"
+        f"        <p>觀測基準狀態：{meta['baseline_status']}</p>\n"
         f"        <p>突破維度：【 {data['breakthrough_str']} 】</p>\n"
         f"        <p>最終演化狀態：[ {data['user_hex']} ] - <strong>{data['state_name']}</strong></p>\n"
         f"        <p>物理時間戳：{timestamp_str}</p>\n"
@@ -292,7 +320,7 @@ def export_latex(basename, data):
         "\\maketitle\n"
         "\\begin{abstract}\n"
         f"[{data['user_hex']}] {data['state_name']}。\n\n"
-        f"突破傳統維度：【{data['breakthrough_str']}】\n"
+        f"觀測狀態：{data['meta_data']['baseline_status']}\n"
         "\\end{abstract}\n\n"
         f"{tex_content}\n\n"
         "\\end{document}\n"
