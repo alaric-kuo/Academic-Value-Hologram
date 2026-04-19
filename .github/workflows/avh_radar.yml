@@ -1,4 +1,4 @@
-name: AVH Hologram Engine (V26.1)
+name: AVH Hologram Engine (V27.0)
 
 on:
   push:
@@ -6,8 +6,6 @@ on:
       - main
     paths:
       - '*.md'
-      - '*.py'
-      - '.github/workflows/*.yml'
   workflow_dispatch: 
 
 jobs:
@@ -48,4 +46,4 @@ jobs:
           compgen -G "WP_Ready_*.html" > /dev/null && git add WP_Ready_*.html || true
           compgen -G "*_Archive.tex" > /dev/null && git add *_Archive.tex || true
 
-          git diff --cached --quiet || (git commit -m "🌌 系統自動顯化：V26.1 背景能勢場與節流裝甲" && git push)
+          git diff --cached --quiet || (git commit -m "🌌 系統自動顯化：V27.0 全域聯集能勢場探測" && git push)
