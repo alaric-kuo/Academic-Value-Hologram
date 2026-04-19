@@ -26,7 +26,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip' # 開啟快取，加速後續依賴安裝
 
       - name: 📦 Install Dependencies (安裝觀測儀器)
         run: |
