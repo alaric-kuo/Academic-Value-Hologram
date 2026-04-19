@@ -6,86 +6,100 @@ import re
 import requests
 import xml.etree.ElementTree as ET
 import urllib.parse
+import time
 from datetime import datetime
 from openai import OpenAI
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V25.1 算力解放與絕對淨化版 - 防斷層隔離)
+# AVH Genesis Engine (V25.2 算力解放與絕對抗阻版 - 指數退避防禦)
 # ==============================================================================
 
 LLM_MODEL_NAME = 'openai/gpt-4o'
-MD_FENCE = "`" * 3  # 物理隔離 Markdown 解析器，防止字串溢位截斷
+MD_FENCE = "`" * 3
 
 print(f"🧠 [載入觀測核心] 啟動 V25 高維度大腦矩陣 ({LLM_MODEL_NAME})...")
-print("⚠️ [系統重構] 已徹底拔除低維向量模型，算力全權移交雲端大腦。")
 
 def get_llm_client():
     token = os.environ.get("COPILOT_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if not token:
         print("工具調用失敗，原因為 遺失 GITHUB_TOKEN")
         sys.exit(1)
-    return OpenAI(base_url="[https://models.github.ai/inference](https://models.github.ai/inference)", api_key=token)
+    return OpenAI(base_url="https://models.github.ai/inference", api_key=token)
+
+def call_llm_with_retry(client, messages, temperature=0.1, max_retries=4):
+    """具備指數退避防禦的 LLM 呼叫引擎，專治 Connection Error 與 Rate Limit"""
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                messages=messages,
+                model=LLM_MODEL_NAME, 
+                temperature=temperature
+            )
+            return response
+        except Exception as e:
+            wait_time = 2 ** attempt  # 1, 2, 4, 8 秒...
+            print(f"⚠️ 雲端連線異常 (嘗試 {attempt + 1}/{max_retries})，等待 {wait_time} 秒後重試... [{e}]")
+            if attempt == max_retries - 1:
+                raise e
+            time.sleep(wait_time)
 
 def parse_llm_json(response_text):
-    """從 LLM 回傳文字中擷取第一個 JSON 物件 (防污染絕對剛性版)"""
     try:
         text = response_text.strip()
-
-        # 使用動態組裝的正規表達式，避開 Markdown 解析器陷阱
         pattern = f"{MD_FENCE}(?:json)?\\s*(\\{{.*?\\}})\\s*{MD_FENCE}"
         fence_match = re.search(pattern, text, re.DOTALL)
         if fence_match:
             return json.loads(fence_match.group(1))
 
-        # 再處理一般 {...} 區塊
         obj_match = re.search(r"(\{.*\})", text, re.DOTALL)
         if obj_match:
             return json.loads(obj_match.group(1))
 
         raise ValueError("找不到可解析的 JSON 區塊")
-
     except Exception as e:
         print(f"工具調用失敗，原因為 LLM JSON 解析失敗 ({e})")
         sys.exit(1)
 
 def fetch_arxiv_papers(query_terms, limit=10):
-    """底層 arXiv 呼叫引擎"""
     search_query = "+AND+".join([f"all:{t}" for t in query_terms])
     encoded_query = urllib.parse.quote(search_query, safe=":+")
     url = (
-        f"[https://export.arxiv.org/api/query](https://export.arxiv.org/api/query)?"
+        f"https://export.arxiv.org/api/query?"
         f"search_query={encoded_query}&start=0&max_results={limit}"
         f"&sortBy=submittedDate&sortOrder=descending"
     )
-    headers = {"User-Agent": "AVH-Hologram/25.1 (GitHub Actions)"}
+    headers = {"User-Agent": "AVH-Hologram/25.2 (GitHub Actions)"}
     
-    try:
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        root = ET.fromstring(response.content)
-        namespace = {'atom': '[http://www.w3.org/2005/Atom](http://www.w3.org/2005/Atom)'}
-        
-        raw_papers = []
-        for entry in root.findall('atom:entry', namespace):
-            title_node = entry.find('atom:title', namespace)
-            abstract_node = entry.find('atom:summary', namespace)
-            id_node = entry.find('atom:id', namespace)
+    for attempt in range(3):
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            root = ET.fromstring(response.content)
+            namespace = {'atom': 'http://www.w3.org/2005/Atom'}
             
-            if title_node is None or abstract_node is None:
-                continue
-            title = title_node.text.strip().replace('\n', ' ')
-            abstract = abstract_node.text.strip().replace('\n', ' ')
-            paper_id = id_node.text.split('/')[-1] if id_node is not None else "Unknown"
-            raw_papers.append({"id": paper_id, "title": title, "abstract": abstract})
-            
-        return raw_papers, search_query.replace("+AND+", " AND ")
-    except Exception as e:
-        print(f"工具調用失敗，原因為 arXiv API 呼叫異常 ({e})")
-        sys.exit(1)
+            raw_papers = []
+            for entry in root.findall('atom:entry', namespace):
+                title_node = entry.find('atom:title', namespace)
+                abstract_node = entry.find('atom:summary', namespace)
+                id_node = entry.find('atom:id', namespace)
+                
+                if title_node is None or abstract_node is None:
+                    continue
+                title = title_node.text.strip().replace('\n', ' ')
+                abstract = abstract_node.text.strip().replace('\n', ' ')
+                paper_id = id_node.text.split('/')[-1] if id_node is not None else "Unknown"
+                raw_papers.append({"id": paper_id, "title": title, "abstract": abstract})
+                
+            return raw_papers, search_query.replace("+AND+", " AND ")
+        except Exception as e:
+            print(f"⚠️ arXiv 連線異常 (嘗試 {attempt + 1}/3)... [{e}]")
+            if attempt == 2:
+                print(f"工具調用失敗，原因為 arXiv API 徹底失去連線 ({e})")
+                sys.exit(1)
+            time.sleep(2)
 
 def evaluate_user_text(raw_text, manifest):
-    """讓 GPT-4o 親自閱讀理論，給出絕對指紋，並翻譯提取英文檢索詞"""
     client = get_llm_client()
     manifest_str = json.dumps(manifest["dimensions"], ensure_ascii=False)
     
@@ -116,20 +130,17 @@ def evaluate_user_text(raw_text, manifest):
 """
     print("🕸️ [大腦運算] GPT-4o 正在讀取文本並進行高維拓樸測量...")
     try:
-        response = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": raw_text[:4000]} # 避免超長
-            ],
-            model=LLM_MODEL_NAME, temperature=0.1
+        response = call_llm_with_retry(
+            client, 
+            messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": raw_text[:4000]}],
+            temperature=0.1
         )
         return parse_llm_json(response.choices[0].message.content)
     except Exception as e:
-        print(f"工具調用失敗，原因為 GPT-4o 評估文本失敗 ({e})")
+        print(f"工具調用失敗，原因為 GPT-4o 評估文本失敗且重試耗盡 ({e})")
         sys.exit(1)
 
 def evaluate_baseline_papers(papers, manifest):
-    """讓 GPT-4o 閱讀 arXiv 論文摘要，判定其保守或突破"""
     if not papers:
         return "000000", [0]*6
         
@@ -151,17 +162,15 @@ def evaluate_baseline_papers(papers, manifest):
 {MD_FENCE}
 """
     try:
-        response = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": papers_str}
-            ],
-            model=LLM_MODEL_NAME, temperature=0.1
+        response = call_llm_with_retry(
+            client,
+            messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": papers_str}],
+            temperature=0.1
         )
         res = parse_llm_json(response.choices[0].message.content)
         return res.get("baseline_hex", "000000"), res.get("vote_stats", [0]*6)
     except Exception as e:
-        print(f"工具調用失敗，原因為 GPT-4o 評估 arXiv 基準失敗 ({e})")
+        print(f"工具調用失敗，原因為 GPT-4o 評估 arXiv 基準失敗且重試耗盡 ({e})")
         sys.exit(1)
 
 def process_avh_manifestation(source_path, manifest):
@@ -223,9 +232,10 @@ def process_avh_manifestation(source_path, manifest):
 請根據下文撰寫約 200 字的「理論導讀摘要」。語氣客觀，禁止使用宣傳式修辭。
 第一句話必須以「本理論架構...」開頭。
 """
-        response = client.chat.completions.create(
+        response = call_llm_with_retry(
+            client,
             messages=[{"role": "system", "content": summary_prompt}, {"role": "user", "content": raw_text[:3000]}],
-            model=LLM_MODEL_NAME, temperature=0.2
+            temperature=0.2
         )
         clean_summary = zhconv.convert(response.choices[0].message.content.strip(), 'zh-tw')
 
