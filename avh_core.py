@@ -11,13 +11,13 @@ from openai import OpenAI
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V33.5 終極純淨版 - 修正版單檔)
+# AVH Genesis Engine (V33.6 進版修正版 - Binary 約束 / 自動修復 / 防污染)
 # ==============================================================================
 
 LLM_MODEL_NAME = "openai/gpt-4o"
 MD_FENCE = chr(96) * 3
 
-print(f"🧠 [載入觀測核心] 啟動 V33.5 高維度大腦矩陣 ({LLM_MODEL_NAME})...")
+print(f"🧠 [載入觀測核心] 啟動 V33.6 高維度大腦矩陣 ({LLM_MODEL_NAME})...")
 
 
 def get_llm_client():
@@ -108,7 +108,7 @@ def parse_llm_json(response_text):
 
 
 def normalize_whitespace(text):
-    return re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", str(text)).strip()
 
 
 def clean_crossref_abstract(raw_abstract):
@@ -117,6 +117,41 @@ def clean_crossref_abstract(raw_abstract):
     text = re.sub(r"<[^>]+>", " ", raw_abstract)
     text = html.unescape(text)
     return normalize_whitespace(text)
+
+
+def enforce_binary_bits(value, field_name):
+    value = str(value).strip()
+    if re.fullmatch(r"[01]{6}", value):
+        return value
+    raise ValueError(f"{field_name} 格式異常：{value}")
+
+
+def repair_binary_bits(client, bad_value, field_name):
+    repair_prompt = f"""
+你上一輪輸出的 {field_name} = {bad_value}
+這是錯的。
+
+注意：
+1. 這不是十六進位，不是 hash，不是代碼。
+2. 你只能回傳 6 位二進制字串，只能由 0 和 1 組成。
+3. 若無法判定，也必須回傳 000000。
+4. 嚴禁出現 A-F 或其他字元。
+
+請只回傳 JSON：
+{{
+  "{field_name}": "<6位二進制字串，例如 010011>"
+}}
+""".strip()
+
+    response = call_llm_with_retry(
+        client,
+        messages=[{"role": "system", "content": repair_prompt}],
+        temperature=0.0,
+        json_mode=True,
+    )
+    repair_json = parse_llm_json(response.choices[0].message.content)
+    repaired = repair_json.get(field_name, "")
+    return enforce_binary_bits(repaired, field_name)
 
 
 def evaluate_user_text_and_compress(raw_text, manifest):
@@ -131,9 +166,14 @@ def evaluate_user_text_and_compress(raw_text, manifest):
 任務一：請根據文本內容，為這 6 個維度進行獨立判定 (sin 或是 cos)，必須動態計算。
 任務二：請將這篇文本的最核心學術貢獻，壓縮成一句「極度精準的英文學術核心宣告 (Core Statement)」。(長度 10-15 字，拒絕八股)
 
+注意：
+1. hex_code 不是十六進位，不是 hash，不是代碼。
+2. hex_code 必須是 6 位 binary bitstring，只能由 0 和 1 組成，例如 101010。
+3. 嚴禁出現 A-F 或其他字元。
+
 請嚴格回傳以下 JSON 格式：
 {{
-  "hex_code": "<動態計算 6 位數字串>",
+  "hex_code": "<必須是6位二進制字串，只能包含0或1，例如101010>",
   "dim_logs": [
     "* **價值意圖**：<判定結果> `[觀測判定：<客觀短語>]`",
     "* **治理維度**：<判定結果> `[觀測判定：<客觀短語>]`",
@@ -159,12 +199,15 @@ def evaluate_user_text_and_compress(raw_text, manifest):
 
     res = parse_llm_json(response.choices[0].message.content)
 
-    hex_code = str(res.get("hex_code", "")).strip()
+    raw_hex = str(res.get("hex_code", "")).strip()
+    try:
+        hex_code = enforce_binary_bits(raw_hex, "hex_code")
+    except ValueError:
+        hex_code = repair_binary_bits(client, raw_hex, "hex_code")
+
     dim_logs = res.get("dim_logs", [])
     core_statement = normalize_whitespace(str(res.get("core_statement", "")).strip())
 
-    if not re.fullmatch(r"[01]{6}", hex_code):
-        raise ValueError(f"Hex Code 格式異常：{hex_code}")
     if not isinstance(dim_logs, list) or len(dim_logs) != 6:
         raise ValueError(f"維度日誌數量異常：需為 6，取得 {len(dim_logs) if isinstance(dim_logs, list) else '非陣列'}")
     if not core_statement:
@@ -178,7 +221,7 @@ def evaluate_user_text_and_compress(raw_text, manifest):
 
 def fetch_broad_neighborhood_crossref(core_statement):
     headers = {
-        "User-Agent": "AVH-Hologram-Engine/33.5 (https://github.com/alaric-kuo; mailto:open-source-bot@example.com)"
+        "User-Agent": "AVH-Hologram-Engine/33.6 (https://github.com/alaric-kuo; mailto:open-source-bot@example.com)"
     }
     params = {
         "query": core_statement,
@@ -310,9 +353,15 @@ def evaluate_matrix_with_reverse_ruler(papers, manifest, core_statement):
 
 維度定義：{manifest_str}
 
+注意：
+1. baseline_hex 不是十六進位，不是 hash，不是代碼。
+2. baseline_hex 必須是 6 位 binary bitstring，只能由 0 和 1 組成，例如 010011。
+3. 若無法判定，也必須回傳 000000。
+4. 嚴禁出現 A-F 或其他字元。
+
 請嚴格回傳 JSON：
 {{
-  "baseline_hex": "<動態計算 6 位數字串>",
+  "baseline_hex": "<必須是6位二進制字串，只能包含0或1，例如010011>",
   "audit_formula": "Angle (θ) = f(本體維度判定, 背景維度判定, 語義偏移權重)",
   "global_angle": "整體相位差：<角度>度 (<干涉狀態>)",
   "vector_analysis": [
@@ -334,9 +383,11 @@ def evaluate_matrix_with_reverse_ruler(papers, manifest, core_statement):
 
     res = parse_llm_json(response.choices[0].message.content)
 
-    baseline_hex = str(res.get("baseline_hex", "")).strip()
-    if not re.fullmatch(r"[01]{6}", baseline_hex):
-        raise ValueError(f"背景 Hex Code 格式異常：{baseline_hex}")
+    raw_baseline = str(res.get("baseline_hex", "")).strip()
+    try:
+        baseline_hex = enforce_binary_bits(raw_baseline, "baseline_hex")
+    except ValueError:
+        baseline_hex = repair_binary_bits(client, raw_baseline, "baseline_hex")
 
     vectors = res.get("vector_analysis", [])
     if not isinstance(vectors, list) or len(vectors) != 6:
@@ -449,7 +500,7 @@ def process_avh_manifestation(source_path, manifest):
 
             for v in matrix_data.get("vector_analysis", []):
                 vector_logs.append(
-                    f"* **{v['dimension']}**：【{v['direction']}】(偏角 {v['angle']}) - {v['reason']}"
+                    f"* **{v['dimension']}**：(偏角 {v['angle']}) - {v['reason']}"
                 )
 
         client = get_llm_client()
@@ -531,7 +582,7 @@ def generate_trajectory_log(target_file, data):
         f"**維度向量干涉儀表板**：\n\n"
         f"{vectors_text}\n\n"
         f"---\n"
-        f"> *註：本報告採 V33.5 終極純淨版。全域實裝原生 JSON 模式、字元防護與 Schema 審計。*\n"
+        f"> *註：本報告採 V33.6 修正版。全域實裝原生 JSON 模式、字元防護、Schema 審計與 Binary 自動修復。*\n"
     )
     return log_output
 
@@ -610,7 +661,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
-        log_file.write("# 📡 AVH 學術價值全像儀：V33.5 終極純淨日誌\n---\n")
+        log_file.write("# 📡 AVH 學術價值全像儀：V33.6 修正版日誌\n---\n")
         last_hex_code = ""
 
         for target_source in source_files:
