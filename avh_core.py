@@ -13,7 +13,7 @@ from openai import OpenAI
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V35.3 穩定可跑版 - JSON 保險 / 長退避 / Void 回歸)
+# AVH Genesis Engine (V35.1 語意拓樸回歸版 - 斬除關鍵字降維與 UI 渲染防爆)
 # ==============================================================================
 
 LLM_MODEL_NAME = "openai/gpt-4o"
@@ -30,72 +30,41 @@ DIMENSIONS = [
 DIMENSION_KEYS = [d["key"] for d in DIMENSIONS]
 DIMENSION_META = {d["key"]: d for d in DIMENSIONS}
 
-print(f"🧠 [載入觀測核心] 啟動 V35.3 穩定可跑版 ({LLM_MODEL_NAME})...")
-
+print(f"🧠 [載入觀測核心] 啟動 V35.1 語意拓樸回歸版 ({LLM_MODEL_NAME})...")
 
 def get_llm_client():
     token = os.environ.get("COPILOT_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if not token:
         raise ValueError("遺失 GITHUB_TOKEN，無法啟動算力。")
-    return OpenAI(base_url="https://models.github.ai/inference", api_key=token)
-
-
-def ensure_json_keyword(messages):
-    """GitHub Models 在 json_object 模式下，messages 內最好明示 json。"""
-    for m in messages:
-        content = str(m.get("content", ""))
-        if "json" in content.lower():
-            return messages
-
-    patched = list(messages)
-    patched.insert(0, {
-        "role": "system",
-        "content": "Return valid json only. The response must be a single json object."
-    })
-    return patched
-
+    return OpenAI(base_url="[https://models.github.ai/inference](https://models.github.ai/inference)", api_key=token)
 
 def call_llm_with_retry(client, messages, temperature=0.0, max_retries=4, json_mode=True):
     last_error = None
-
     for attempt in range(max_retries):
         try:
-            effective_messages = ensure_json_keyword(messages) if json_mode else messages
-
             kwargs = {
-                "messages": effective_messages,
+                "messages": messages,
                 "model": LLM_MODEL_NAME,
                 "temperature": temperature
             }
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
-
             return client.chat.completions.create(**kwargs)
-
         except Exception as e:
             last_error = e
-            err_text = str(e).lower()
-
-            if "too many requests" in err_text or "429" in err_text or "rate limit" in err_text:
-                wait_schedule = [15, 30, 60, 120]
-                wait_time = wait_schedule[min(attempt, len(wait_schedule) - 1)]
-            else:
-                wait_time = 2 ** attempt
-
+            wait_time = 2 ** attempt
             print(f"⚠️ 雲端連線異常 (嘗試 {attempt + 1}/{max_retries})，等待 {wait_time} 秒後重試... [{e}]")
-
             if attempt < max_retries - 1:
                 time.sleep(wait_time)
-
     raise ConnectionError(f"雲端算力請求超時或阻擋 ({last_error})")
-
 
 def parse_llm_json(response_text):
     if response_text is None:
         raise ValueError("LLM 未回傳任何內容。")
-
+    
     text = response_text.strip()
-
+    
+    # 絕對防禦：動態生成反引號以避開系統 UI 崩潰 (immersive_entry_chip bug)
     fence = chr(96) * 3
     pattern = fence + r"(?:json)?\s*(.*?)\s*" + fence
     match = re.search(pattern, text, re.DOTALL)
@@ -132,17 +101,15 @@ def parse_llm_json(response_text):
         raise ValueError("找不到完整 JSON 結尾。")
 
     clean_json = text[start_idx:end_idx + 1]
-
+    
     try:
         return json.loads(clean_json, strict=False)
     except Exception:
         clean_json = re.sub(r"(?<!\\)\n", " ", clean_json)
         return json.loads(clean_json, strict=False)
 
-
 def normalize_whitespace(text):
     return re.sub(r"\s+", " ", str(text)).strip()
-
 
 def clean_crossref_abstract(raw_abstract):
     if not raw_abstract:
@@ -151,23 +118,18 @@ def clean_crossref_abstract(raw_abstract):
     text = html.unescape(text)
     return normalize_whitespace(text)
 
-
 def clamp(value, low, high):
     return max(low, min(high, value))
-
 
 def dim_label(key):
     meta = DIMENSION_META[key]
     return f"{meta['zh']}（{meta['en']}）"
 
-
 def sign_to_binary(scores_by_key):
     return "".join("1" if scores_by_key[k] > 0 else "0" for k in DIMENSION_KEYS)
 
-
 def signed_score_to_side(score):
     return "離群突破（sin）" if score > 0 else "合群守成（cos）"
-
 
 def enforce_score(value, field_name):
     try:
@@ -176,14 +138,12 @@ def enforce_score(value, field_name):
         raise ValueError(f"{field_name} 分數無法解析：{value}")
     return clamp(score, -100, 100)
 
-
 def enforce_confidence(value, field_name):
     try:
         conf = int(round(float(value)))
     except Exception:
         raise ValueError(f"{field_name} 置信度無法解析：{value}")
     return clamp(conf, 0, 100)
-
 
 def validate_dimension_entries(entries, field_prefix):
     if not isinstance(entries, list) or len(entries) != 6:
@@ -201,7 +161,6 @@ def validate_dimension_entries(entries, field_prefix):
         raise ValueError(f"{field_prefix} 缺少維度：{missing}")
     return by_key
 
-
 def cosine_similarity(vec_a, vec_b):
     dot = sum(a * b for a, b in zip(vec_a, vec_b))
     norm_a = math.sqrt(sum(a * a for a in vec_a))
@@ -210,16 +169,13 @@ def cosine_similarity(vec_a, vec_b):
         return 0.0
     return dot / (norm_a * norm_b)
 
-
 def angle_from_cosine(cos_val):
     cos_val = clamp(cos_val, -1.0, 1.0)
     return math.degrees(math.acos(cos_val))
 
-
 def proximity_from_scores(user_score, background_score):
     diff = abs(user_score - background_score)
     return round(max(0.0, 100.0 - diff / 2.0), 1)
-
 
 def classify_relation(user_score, background_score):
     if abs(background_score) < 10:
@@ -236,13 +192,11 @@ def classify_relation(user_score, background_score):
         return "同向，但本體更強"
     return "同向，但背景更強"
 
-
 def compact_title(title, max_len=72):
     title = normalize_whitespace(title)
     if len(title) <= max_len:
         return title
     return title[: max_len - 1] + "…"
-
 
 def escape_latex(text):
     if text is None:
@@ -258,7 +212,6 @@ def escape_latex(text):
         out = out.replace(src, dst)
     return out
 
-
 def markdown_to_latex(text):
     lines = str(text).splitlines()
     out = []
@@ -273,7 +226,6 @@ def markdown_to_latex(text):
             out.append(escape_latex(line))
     return "\n".join(out)
 
-
 def build_dimensions_prompt(manifest):
     payload = []
     for d in DIMENSIONS:
@@ -287,7 +239,6 @@ def build_dimensions_prompt(manifest):
             "cos_def": dim_def["cos_def"],
         })
     return json.dumps(payload, ensure_ascii=False)
-
 
 def evaluate_user_profile(raw_text, manifest):
     client = get_llm_client()
@@ -313,11 +264,11 @@ def evaluate_user_profile(raw_text, manifest):
   "core_statement": "<10-15 字精準英文核心宣告>",
   "academic_fingerprint": "<中文學術指紋>",
   "dimensions": [
-    {{"key": "value_intent", "signed_score": 85, "confidence": 92, "reason": "..."}} ,
-    {{"key": "governance", "signed_score": 72, "confidence": 88, "reason": "..."}} ,
-    {{"key": "cognition", "signed_score": 90, "confidence": 90, "reason": "..."}} ,
-    {{"key": "architecture", "signed_score": 83, "confidence": 87, "reason": "..."}} ,
-    {{"key": "expansion", "signed_score": 78, "confidence": 85, "reason": "..."}} ,
+    {{"key": "value_intent", "signed_score": 85, "confidence": 92, "reason": "..."}},
+    {{"key": "governance", "signed_score": 72, "confidence": 88, "reason": "..."}},
+    {{"key": "cognition", "signed_score": 90, "confidence": 90, "reason": "..."}},
+    {{"key": "architecture", "signed_score": 83, "confidence": 87, "reason": "..."}},
+    {{"key": "expansion", "signed_score": 78, "confidence": 85, "reason": "..."}},
     {{"key": "application", "signed_score": 68, "confidence": 80, "reason": "..."}}
   ]
 }}
@@ -360,19 +311,17 @@ def evaluate_user_profile(raw_text, manifest):
         "hex_code": sign_to_binary(scores)
     }
 
-
 def fetch_broad_neighborhood_crossref(core_statement):
     headers = {
-        "User-Agent": "AVH-Hologram-Engine/35.3 (https://github.com/alaric-kuo; mailto:open-source-bot@example.com)"
+        "User-Agent": "AVH-Hologram-Engine/35.1 ([https://github.com/alaric-kuo](https://github.com/alaric-kuo); mailto:open-source-bot@example.com)"
     }
     encoded_query = urllib.parse.quote(core_statement)
-    url = f"https://api.crossref.org/works?query={encoded_query}&select=DOI,title,abstract&rows=30"
+    url = f"[https://api.crossref.org/works?query=](https://api.crossref.org/works?query=){encoded_query}&select=DOI,title,abstract&rows=30"
 
     print(f"🌍 [階段 2] 投放核心宣告：『{core_statement}』\n🌍 正在 Crossref 禮貌池中打撈關聯文獻...")
     try:
         response = requests.get(url, headers=headers, timeout=20)
         if response.status_code == 429:
-            print("⚠️ Crossref 暫時限流，等待 5 秒後重試...")
             time.sleep(5)
             response = requests.get(url, headers=headers, timeout=20)
         response.raise_for_status()
@@ -398,12 +347,10 @@ def fetch_broad_neighborhood_crossref(core_statement):
             })
             if len(raw_papers) >= 20:
                 break
-
         print(f"🌍 成功撈取 {len(raw_papers)} 篇具備摘要之文獻，準備進行大腦重排...")
         return raw_papers
     except Exception as e:
         raise ConnectionError(f"Crossref 連線異常或超時 ({e})")
-
 
 def rerank_and_filter_papers(core_statement, raw_papers):
     if not raw_papers:
@@ -450,7 +397,6 @@ def rerank_and_filter_papers(core_statement, raw_papers):
 
     final_papers = [p for p in raw_papers if p["id"] in selected_ids][:8]
     return final_papers, filtering_log
-
 
 def evaluate_background_papers(final_papers, manifest, core_statement):
     if not final_papers:
@@ -511,11 +457,9 @@ def evaluate_background_papers(final_papers, manifest, core_statement):
     scored_papers = []
 
     for item in returned:
-        if not isinstance(item, dict):
-            continue
+        if not isinstance(item, dict): continue
         paper_id = str(item.get("id", "")).strip()
-        if paper_id not in valid_map:
-            continue
+        if paper_id not in valid_map: continue
 
         by_key = validate_dimension_entries(item.get("scores", []), f"背景文獻 {paper_id}")
         scores = {}
@@ -532,7 +476,6 @@ def evaluate_background_papers(final_papers, manifest, core_statement):
     batch_log = normalize_whitespace(res.get("batch_log", "背景文獻已完成逐篇量化。"))
     return {"papers": scored_papers, "batch_log": batch_log}
 
-
 def aggregate_background(scored_papers):
     mean_scores = {}
     peak_scores = {}
@@ -547,7 +490,6 @@ def aggregate_background(scored_papers):
     background_hex = sign_to_binary({k: mean_scores[k] for k in DIMENSION_KEYS})
     return mean_scores, peak_scores, peak_papers, background_hex
 
-
 def build_vector_logs(user_profile, scored_papers):
     user_scores = user_profile["scores"]
     mean_scores, peak_scores, peak_papers, background_hex = aggregate_background(scored_papers)
@@ -559,18 +501,12 @@ def build_vector_logs(user_profile, scored_papers):
     angle = round(angle_from_cosine(cos_val), 1)
     global_proximity = round(max(0.0, 100.0 - angle / 1.8), 1)
 
-    if angle < 30:
-        global_relation = "高度同向"
-    elif angle < 60:
-        global_relation = "中度同向"
-    elif angle < 90:
-        global_relation = "弱同向"
-    elif angle == 90:
-        global_relation = "正交"
-    elif angle < 120:
-        global_relation = "弱反向"
-    else:
-        global_relation = "明顯反向"
+    if angle < 30: global_relation = "高度同向"
+    elif angle < 60: global_relation = "中度同向"
+    elif angle < 90: global_relation = "弱同向"
+    elif angle == 90: global_relation = "正交"
+    elif angle < 120: global_relation = "弱反向"
+    else: global_relation = "明顯反向"
 
     vector_logs = []
     for key in DIMENSION_KEYS:
@@ -610,7 +546,6 @@ def build_vector_logs(user_profile, scored_papers):
         "vector_logs": vector_logs,
     }
 
-
 def format_user_dimension_logs(user_profile):
     logs = []
     for key in DIMENSION_KEYS:
@@ -621,7 +556,6 @@ def format_user_dimension_logs(user_profile):
         side = signed_score_to_side(score)
         logs.append(f"* **{label}**：`{score:+d}` / 100 ｜ **{side}** ｜ 置信度 `{conf}` ｜ 觀測判定：{reason}")
     return logs
-
 
 def format_vector_logs(vector_data):
     logs = []
@@ -634,15 +568,13 @@ def format_vector_logs(vector_data):
         )
     return logs
 
-
 def format_reference_records(scored_papers):
     rows = []
     for p in scored_papers:
-        doi_link = f"https://doi.org/{p['id']}" if p["id"] != "Unknown" else "#"
+        doi_link = f"[https://doi.org/](https://doi.org/){p['id']}" if p["id"] != "Unknown" else "#"
         note = f"｜{p['note']}" if p["note"] else ""
         rows.append(f"- [DOI 連結]({doi_link}) **{p['title']}** {note}")
     return rows
-
 
 def generate_summary(raw_text, global_relation, global_angle, global_proximity):
     client = get_llm_client()
@@ -654,20 +586,16 @@ def generate_summary(raw_text, global_relation, global_angle, global_proximity):
 請根據下文，撰寫 180-240 字中文理論導讀。第一句必須以「本理論架構...」開頭。客觀不神話化。
 """.strip()
 
-    try:
-        response = call_llm_with_retry(
-            client,
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": raw_text[:5000]},
-            ],
-            temperature=0.2,
-            json_mode=False,
-        )
-        return zhconv.convert((response.choices[0].message.content or "").strip(), "zh-tw")
-    except Exception:
-        return f"本理論架構目前與背景場的整體關係為{global_relation}，相位角約為 {global_angle} 度，語意相近度約為 {global_proximity} / 100。由於摘要生成階段遭遇雲端限流，系統暫以保底敘述輸出。"
-
+    response = call_llm_with_retry(
+        client,
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": raw_text[:5000]},
+        ],
+        temperature=0.2,
+        json_mode=False,
+    )
+    return zhconv.convert((response.choices[0].message.content or "").strip(), "zh-tw")
 
 def process_avh_manifestation(source_path, manifest):
     print(f"\n🌊 [波包掃描] 實體源碼：{source_path}")
@@ -682,19 +610,9 @@ def process_avh_manifestation(source_path, manifest):
         user_profile = evaluate_user_profile(raw_text, manifest)
         user_hex = user_profile["hex_code"]
         state_info = manifest["states"].get(user_hex, {"name": "未知狀態", "desc": "缺乏觀測紀錄"})
-
-        try:
-            raw_papers = fetch_broad_neighborhood_crossref(user_profile["core_statement"])
-        except Exception as e:
-            raw_papers = []
-            filtering_log = f"Crossref 打撈失敗，系統直接回歸無人區（{e}）"
-            final_papers = []
-        else:
-            try:
-                final_papers, filtering_log = rerank_and_filter_papers(user_profile["core_statement"], raw_papers)
-            except Exception as e:
-                final_papers = []
-                filtering_log = f"大腦重排失敗，系統直接回歸無人區（{e}）"
+        
+        raw_papers = fetch_broad_neighborhood_crossref(user_profile["core_statement"])
+        final_papers, filtering_log = rerank_and_filter_papers(user_profile["core_statement"], raw_papers)
 
         if not final_papers:
             baseline_status = "Void（無人區：外部場域尚不足以形成可測量母體）"
@@ -708,34 +626,22 @@ def process_avh_manifestation(source_path, manifest):
             background_batch_log = "最終保留文獻為 0，系統判定當前外部場域不足以構成可測量背景母體。"
             summary = "本理論架構目前處於無人區狀態；外部鄰近文獻尚不足以形成穩定背景母體，因此與現有學界的方向關係暫時不可定義。"
         else:
+            baseline_status = f"Background Field Established（背景能勢建構完成：{len(final_papers)} 鄰域節點）"
             scored_background = evaluate_background_papers(final_papers, manifest, user_profile["core_statement"])
-            if not scored_background["papers"]:
-                baseline_status = "Void（無人區：背景量化回傳空集合，無法形成可測量母體）"
-                background_hex = "000000"
-                paper_records = ["- `[Void]` **全域寂靜**：背景量化未回傳有效文獻，系統直接回歸無人區。"]
-                vector_logs = ["* **背景向量量化**：背景量化結果為空，暫無穩定背景向量可供干涉比較。"]
-                global_angle = "無定義（Void）"
-                global_cosine = "N/A"
-                global_proximity = "N/A"
-                global_relation = "無人區"
-                background_batch_log = "背景量化未回傳有效 papers，系統回歸無人區。"
-                summary = "本理論架構目前處於無人區狀態；雖然前段曾保留背景文獻，但背景量化未形成有效向量母體，因此方向關係暫時不可定義。"
-            else:
-                baseline_status = f"Background Field Established（背景能勢建構完成：{len(final_papers)} 鄰域節點）"
-                background_batch_log = scored_background["batch_log"]
+            background_batch_log = scored_background["batch_log"]
 
-                vector_data = build_vector_logs(user_profile, scored_background["papers"])
-                background_hex = vector_data["background_hex"]
-                vector_logs = format_vector_logs(vector_data)
-                global_angle = f"{vector_data['global_angle']} 度（{vector_data['global_relation']}）"
-                global_cosine = vector_data["global_cosine"]
-                global_proximity = vector_data["global_proximity"]
-                global_relation = vector_data["global_relation"]
-                paper_records = format_reference_records(scored_background["papers"])
+            vector_data = build_vector_logs(user_profile, scored_background["papers"])
+            background_hex = vector_data["background_hex"]
+            vector_logs = format_vector_logs(vector_data)
+            global_angle = f"{vector_data['global_angle']} 度（{vector_data['global_relation']}）"
+            global_cosine = vector_data["global_cosine"]
+            global_proximity = vector_data["global_proximity"]
+            global_relation = vector_data["global_relation"]
+            paper_records = format_reference_records(scored_background["papers"])
 
-                summary = generate_summary(
-                    raw_text, vector_data["global_relation"], vector_data["global_angle"], vector_data["global_proximity"]
-                )
+            summary = generate_summary(
+                raw_text, vector_data["global_relation"], vector_data["global_angle"], vector_data["global_proximity"]
+            )
 
         return {
             "user_hex": user_hex,
@@ -748,7 +654,7 @@ def process_avh_manifestation(source_path, manifest):
                 "core_statement": user_profile["core_statement"],
                 "academic_fingerprint": user_profile["academic_fingerprint"],
                 "user_dimension_logs": format_user_dimension_logs(user_profile),
-                "raw_hits": len(raw_papers) if 'raw_papers' in locals() else 0,
+                "raw_hits": len(raw_papers),
                 "final_hits": len(final_papers) if final_papers else 0,
                 "filtering_log": filtering_log,
                 "background_batch_log": background_batch_log,
@@ -765,7 +671,6 @@ def process_avh_manifestation(source_path, manifest):
     except Exception as e:
         print(f"❌ 檔案 {source_path} 處理失敗: {e}")
         return None
-
 
 def generate_trajectory_log(target_file, data):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S CST")
@@ -807,9 +712,8 @@ def generate_trajectory_log(target_file, data):
         f"### 4. 🧾 系統導讀摘要（System Interpretation）\n"
         f"> {data['summary']}\n\n"
         f"---\n"
-        f"> *註：本報告採 V35.3 穩定可跑版。優先保證輸出、JSON 合規、長退避與 Void 回歸。*\n"
+        f"> *註：本報告採 V35.1 語意拓樸回歸版。斬除關鍵字降維污染，全域回歸高維大腦結構重排。*\n"
     )
-
 
 def export_wordpress_html(basename, data):
     safe_full_text = html.escape(data["full_text"]).replace("\n", "<br>")
@@ -823,7 +727,7 @@ def export_wordpress_html(basename, data):
         "  </div>\n"
         "  <hr>\n"
         "  <div class=\"avh-seal\" style=\"border: 2px solid #333; padding: 20px; background: #fafafa; margin-top: 30px;\">\n"
-        "    <h3>📡 學術價值全像儀（AVH）穩定可跑認證</h3>\n"
+        "    <h3>📡 學術價值全像儀（AVH）語意干涉認證</h3>\n"
         f"    <p><strong>核心宣告：</strong>{html.escape(meta['core_statement'])}</p>\n"
         f"    <p><strong>本體狀態：</strong>[ {html.escape(data['user_hex'])} ] - {html.escape(data['state_name'])}</p>\n"
         f"    <p><strong>背景狀態：</strong>[ {html.escape(data['baseline_hex'])} ]</p>\n"
@@ -837,7 +741,6 @@ def export_wordpress_html(basename, data):
     )
     with open(f"WP_Ready_{basename}.html", "w", encoding="utf-8") as f:
         f.write(html_output)
-
 
 def export_latex(basename, data):
     safe_text = markdown_to_latex(data["full_text"])
@@ -865,24 +768,19 @@ def export_latex(basename, data):
     with open(f"{basename}_Archive.tex", "w", encoding="utf-8") as f:
         f.write(tex_output)
 
-
 if __name__ == "__main__":
     if not os.path.exists("avh_manifest.json"):
         print("⚠️ 遺失底層定義檔 avh_manifest.json，終止執行。")
         sys.exit(1)
-
     with open("avh_manifest.json", "r", encoding="utf-8") as f:
         manifest = json.load(f)
-
     source_files = [f for f in glob.glob("*.md") if f.lower() not in ["avh_observation_log.md"]]
     if not source_files:
         print("ℹ️ 未找到任何 Markdown 來源檔。")
         sys.exit(0)
-
     with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
-        log_file.write("# 📡 AVH 學術價值全像儀：V35.3 穩定可跑日誌\n---\n")
+        log_file.write("# 📡 AVH 學術價值全像儀：V35.1 語意拓樸回歸日誌\n---\n")
         last_hex_code = ""
-
         for target_source in source_files:
             result_data = process_avh_manifestation(target_source, manifest)
             if result_data:
@@ -893,7 +791,6 @@ if __name__ == "__main__":
                 export_latex(basename, result_data)
             else:
                 log_file.write(f"\n> ⚠️ `[{target_source}]` 掃描失敗或略過，詳見系統執行日誌。\n---\n")
-
     if last_hex_code:
         with open(os.environ.get("GITHUB_ENV", "env.tmp"), "a", encoding="utf-8") as env_file:
             env_file.write(f"HEX_CODE={last_hex_code}\n")
