@@ -12,7 +12,7 @@ from openai import OpenAI
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V34.0 可解釋量化版 - 雙語完整標籤 / 強度分數 / 幾何量化)
+# AVH Genesis Engine (V34.1 單核精準檢索版 - Core Statement = Query)
 # ==============================================================================
 
 LLM_MODEL_NAME = "openai/gpt-4o"
@@ -29,7 +29,13 @@ DIMENSIONS = [
 DIMENSION_KEYS = [d["key"] for d in DIMENSIONS]
 DIMENSION_META = {d["key"]: d for d in DIMENSIONS}
 
-print(f"🧠 [載入觀測核心] 啟動 V34.0 可解釋量化引擎 ({LLM_MODEL_NAME})...")
+STOPWORDS = {
+    "the", "a", "an", "and", "or", "for", "of", "to", "in", "on", "through",
+    "by", "with", "from", "into", "via", "using", "use", "based", "beyond",
+    "toward", "towards", "within", "across", "under", "over", "between"
+}
+
+print(f"🧠 [載入觀測核心] 啟動 V34.1 單核精準檢索版 ({LLM_MODEL_NAME})...")
 
 
 # ------------------------------------------------------------------------------
@@ -57,7 +63,6 @@ def call_llm_with_retry(client, messages, temperature=0.0, max_retries=4, json_m
             }
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
-
             return client.chat.completions.create(**kwargs)
 
         except Exception as e:
@@ -223,6 +228,47 @@ def compact_title(title, max_len=72):
     return title[: max_len - 1] + "…"
 
 
+def escape_latex(text):
+    if text is None:
+        return ""
+
+    replacements = [
+        ("\\", "__LATEX_BACKSLASH__"),
+        ("&", r"\&"),
+        ("%", r"\%"),
+        ("$", r"\$"),
+        ("#", r"\#"),
+        ("_", r"\_"),
+        ("{", r"\{"),
+        ("}", r"\}"),
+        ("~", r"\textasciitilde{}"),
+        ("^", r"\textasciicircum{}"),
+        ("__LATEX_BACKSLASH__", r"\textbackslash{}"),
+    ]
+
+    out = str(text)
+    for src, dst in replacements:
+        out = out.replace(src, dst)
+    return out
+
+
+def markdown_to_latex(text):
+    lines = str(text).splitlines()
+    out = []
+
+    for line in lines:
+        if line.startswith("### "):
+            out.append(f"\\subsubsection{{{escape_latex(line[4:])}}}")
+        elif line.startswith("## "):
+            out.append(f"\\subsection{{{escape_latex(line[3:])}}}")
+        elif line.startswith("# "):
+            out.append(f"\\section{{{escape_latex(line[2:])}}}")
+        else:
+            out.append(escape_latex(line))
+
+    return "\n".join(out)
+
+
 def build_dimensions_prompt(manifest):
     payload = []
     for d in DIMENSIONS:
@@ -238,8 +284,26 @@ def build_dimensions_prompt(manifest):
     return json.dumps(payload, ensure_ascii=False)
 
 
+def tokenize_query_terms(text):
+    return [t for t in re.findall(r"[a-zA-Z][a-zA-Z\-]{2,}", str(text).lower()) if t not in STOPWORDS]
+
+
+def build_phrase_windows(core_statement):
+    tokens = tokenize_query_terms(core_statement)
+    windows = []
+
+    # 3-gram 與 2-gram 作為強錨點
+    for n in [3, 2]:
+        for i in range(len(tokens) - n + 1):
+            phrase = " ".join(tokens[i:i+n])
+            if phrase not in windows:
+                windows.append(phrase)
+
+    return windows[:8]
+
+
 # ------------------------------------------------------------------------------
-# 階段 1：本體量化
+# 階段 1：本體量化 + 單核檢索句生成
 # ------------------------------------------------------------------------------
 
 def evaluate_user_profile(raw_text, manifest):
@@ -260,14 +324,19 @@ def evaluate_user_profile(raw_text, manifest):
 4. -100 = 非常強烈的合群守成（cos）。
 5. confidence 範圍必須是 0 到 100 的整數。
 6. reason 必須是簡潔中文短語，客觀，不煽情。
-7. academic_fingerprint 必須是 60-100 字中文，客觀，不要鼓勵語氣，不要神話化。
+7. academic_fingerprint 必須是 60-110 字中文，客觀，不要鼓勵語氣，不要神話化。
 
-另外，請把文本最核心的學術貢獻壓縮成一句英文核心宣告（Core Statement），10-15 個字左右。
+最重要：
+8. core_statement 同時是「展示主題句」與「檢索句」，不可拆成兩套。
+9. 它必須是可檢索、可追溯、精準的英文學術句，不是口號，不是標題，不是漂亮摘要。
+10. 長度以 8-18 個英文詞為原則。
+11. 必須盡量包含：研究對象、方法框架、判準衝突 或 目標問題。
+12. 避免過度泛化詞，例如只寫 redefining / evolution / trust / ontology 而沒有具體對象。
 
 請只回傳 JSON：
 {{
-  "core_statement": "<英文核心宣告>",
-  "academic_fingerprint": "<60-100字中文學術指紋>",
+  "core_statement": "<同時作為展示與檢索的英文學術句>",
+  "academic_fingerprint": "<60-110字中文學術指紋>",
   "dimensions": [
     {{
       "key": "value_intent",
@@ -309,7 +378,7 @@ def evaluate_user_profile(raw_text, manifest):
 }}
 """.strip()
 
-    print("🕸️ [階段 1] 量化本體強度向量...")
+    print("🕸️ [階段 1] 量化本體強度向量，並生成單核精準檢索句...")
     response = call_llm_with_retry(
         client,
         messages=[
@@ -340,6 +409,9 @@ def evaluate_user_profile(raw_text, manifest):
         confidences[key] = enforce_confidence(item.get("confidence"), f"{key}.confidence")
         reasons[key] = normalize_whitespace(item.get("reason", ""))
 
+    query_terms = list(dict.fromkeys(tokenize_query_terms(core_statement)))
+    query_phrases = build_phrase_windows(core_statement)
+
     return {
         "core_statement": core_statement,
         "academic_fingerprint": academic_fingerprint,
@@ -347,24 +419,26 @@ def evaluate_user_profile(raw_text, manifest):
         "confidences": confidences,
         "reasons": reasons,
         "hex_code": sign_to_binary(scores),
+        "query_terms": query_terms,
+        "query_phrases": query_phrases,
     }
 
 
 # ------------------------------------------------------------------------------
-# 階段 2：Crossref 打撈與重排
+# 階段 2：Crossref 打撈
 # ------------------------------------------------------------------------------
 
 def fetch_broad_neighborhood_crossref(core_statement):
     headers = {
-        "User-Agent": "AVH-Hologram-Engine/34.0 (https://github.com/alaric-kuo; mailto:open-source-bot@example.com)"
+        "User-Agent": "AVH-Hologram-Engine/34.1 (https://github.com/alaric-kuo; mailto:open-source-bot@example.com)"
     }
     params = {
         "query": core_statement,
         "select": "DOI,title,abstract",
-        "rows": 25,
+        "rows": 30,
     }
 
-    print(f"🌍 [階段 2] 投放核心宣告：『{core_statement}』")
+    print(f"🌍 [階段 2] 投放核心宣告（同時作為檢索句）：『{core_statement}』")
     print("🌍 正在 Crossref 禮貌池中打撈關聯文獻...")
 
     try:
@@ -406,41 +480,127 @@ def fetch_broad_neighborhood_crossref(core_statement):
             raw_papers.append({
                 "id": doi,
                 "title": normalize_whitespace(title),
-                "abstract": clean_abstract[:800],
+                "abstract": clean_abstract[:900],
             })
 
-            if len(raw_papers) >= 20:
+            if len(raw_papers) >= 24:
                 break
 
-        print(f"🌍 成功撈取 {len(raw_papers)} 篇具備摘要之文獻，準備進行背景重排...")
+        print(f"🌍 成功撈取 {len(raw_papers)} 篇具備摘要之文獻，準備進行 lexical prefilter...")
         return raw_papers
 
     except Exception as e:
         raise ConnectionError(f"Crossref 連線異常或超時 ({e})")
 
 
-def rerank_and_filter_papers(core_statement, raw_papers):
+# ------------------------------------------------------------------------------
+# 階段 3：程式級 lexical prefilter
+# ------------------------------------------------------------------------------
+
+def score_paper_by_core_statement(paper, core_statement, query_terms, query_phrases):
+    combined = normalize_whitespace(f"{paper['title']} {paper['abstract']}").lower()
+
+    score = 0
+    matched_terms = []
+    matched_phrases = []
+
+    full_statement = normalize_whitespace(core_statement).lower()
+    if full_statement and full_statement in combined:
+        score += 45
+        matched_phrases.append(full_statement)
+
+    for phrase in query_phrases:
+        if phrase and phrase in combined:
+            score += 18
+            matched_phrases.append(phrase)
+
+    for term in query_terms:
+        if term in combined:
+            score += 8
+            matched_terms.append(term)
+
+    coverage = 0.0
+    if query_terms:
+        coverage = len(set(matched_terms)) / len(set(query_terms))
+
+    # 標題命中加權
+    title_l = paper["title"].lower()
+    title_hits = sum(1 for term in query_terms if term in title_l)
+    score += title_hits * 5
+
+    return {
+        "lexical_score": score,
+        "coverage": round(coverage, 3),
+        "matched_terms": sorted(set(matched_terms)),
+        "matched_phrases": sorted(set(matched_phrases)),
+    }
+
+
+def prefilter_raw_papers(raw_papers, core_statement, query_terms, query_phrases, keep_top_k=12):
     if not raw_papers:
+        return [], "無原始文獻可做 lexical prefilter。"
+
+    enriched = []
+    for paper in raw_papers:
+        scored = score_paper_by_core_statement(paper, core_statement, query_terms, query_phrases)
+        p2 = dict(paper)
+        p2.update(scored)
+        enriched.append(p2)
+
+    enriched.sort(
+        key=lambda x: (x["lexical_score"], x["coverage"], len(x["matched_terms"])),
+        reverse=True
+    )
+
+    kept = [p for p in enriched if p["lexical_score"] > 0][:keep_top_k]
+
+    if not kept and enriched:
+        kept = enriched[:min(6, len(enriched))]
+
+    if kept:
+        top = kept[0]
+        log = (
+            f"程式級 prefilter 已啟動；原始 {len(raw_papers)} 篇，保留 {len(kept)} 篇。"
+            f"最高 lexical score = {top['lexical_score']}，coverage = {top['coverage']:.3f}。"
+            f"主要命中詞：{', '.join(top['matched_terms'][:8]) if top['matched_terms'] else '無'}。"
+        )
+    else:
+        log = f"程式級 prefilter 已啟動；原始 {len(raw_papers)} 篇，但無任何文獻命中核心檢索句。"
+
+    return kept, log
+
+
+# ------------------------------------------------------------------------------
+# 階段 4：LLM 重排
+# ------------------------------------------------------------------------------
+
+def rerank_and_filter_papers(core_statement, prefiltered_papers):
+    if not prefiltered_papers:
         return [], "無可用文獻進行重排。"
 
     client = get_llm_client()
-    papers_json = json.dumps(raw_papers, ensure_ascii=False)
+    papers_json = json.dumps(prefiltered_papers, ensure_ascii=False)
 
     sys_prompt = f"""
 你現在是一位客觀的學術觀測員。
-本理論核心宣告為："{core_statement}"
+本理論唯一核心宣告（同時作為檢索句）為：
+"{core_statement}"
 
-以下是初步打撈回來的文獻。請剔除只是撞字、但理論結構無關的雜訊；
-保留最適合作為「參考背景能勢」或「對話對象」的文獻，最多 8 篇。
+以下文獻已經通過程式級 lexical prefilter。
+請你再做一次理論結構重排：
+1. 保留真正與這個核心宣告同題或可對話的文獻。
+2. 剔除只是撞字、但問題設定不同的文獻。
+3. 最多保留 8 篇，0 篇則回傳空陣列。
+4. filtering_log 必須用中文，明確說明保留與剔除判準。
 
 請只回傳 JSON：
 {{
   "selected_ids": ["<保留的 id>"],
-  "filtering_log": "<中文簡述保留與剔除理由，80-160字>"
+  "filtering_log": "<中文簡述保留與剔除理由，80-180字>"
 }}
 """.strip()
 
-    print("⚖️ [階段 3] 啟動柔性重排，萃取符合條件的參考背景能勢...")
+    print("⚖️ [階段 4] 啟動結構重排，萃取真正可對話的背景文獻...")
     response = call_llm_with_retry(
         client,
         messages=[
@@ -456,16 +616,16 @@ def rerank_and_filter_papers(core_statement, raw_papers):
     if not isinstance(raw_selected, list):
         raise TypeError("selected_ids 必須是陣列 (list)")
 
-    valid_ids = {p["id"] for p in raw_papers}
+    valid_ids = {p["id"] for p in prefiltered_papers}
     selected_ids = {str(sid).strip() for sid in raw_selected if str(sid).strip() in valid_ids}
     filtering_log = normalize_whitespace(res.get("filtering_log", "執行標準過濾機制。"))
 
-    final_papers = [p for p in raw_papers if p["id"] in selected_ids][:8]
+    final_papers = [p for p in prefiltered_papers if p["id"] in selected_ids][:8]
     return final_papers, filtering_log
 
 
 # ------------------------------------------------------------------------------
-# 階段 3：背景逐篇量化
+# 階段 5：背景逐篇量化
 # ------------------------------------------------------------------------------
 
 def evaluate_background_papers(final_papers, manifest, core_statement):
@@ -478,7 +638,8 @@ def evaluate_background_papers(final_papers, manifest, core_statement):
 
     sys_prompt = f"""
 你是一台「背景文獻向量量化儀」。
-觀測原點之核心宣告為："{core_statement}"
+觀測原點唯一核心宣告為：
+"{core_statement}"
 
 請逐篇閱讀以下文獻摘要，並用與本體相同的六維座標進行量化。
 
@@ -488,12 +649,12 @@ def evaluate_background_papers(final_papers, manifest, core_statement):
 量化規則：
 1. 每篇文獻、每一維都必須回傳 signed_score，範圍是 -100 到 +100 的整數。
 2. +100 = 非常強烈離群突破（sin）；0 = 中性；-100 = 非常強烈合群守成（cos）。
-3. note 請用 10-24 字中文簡述該文獻與核心宣告的對位特徵。
+3. note 請用 10-30 字中文簡述該文獻與核心宣告的對位特徵。
 4. 不要使用鼓勵語氣，不要神話化。
 
 請只回傳 JSON：
 {{
-  "batch_log": "<中文簡述整批背景文獻的整體特徵，60-120字>",
+  "batch_log": "<中文簡述整批背景文獻的共同特徵與限制，60-140字>",
   "papers": [
     {{
       "id": "<doi>",
@@ -511,7 +672,7 @@ def evaluate_background_papers(final_papers, manifest, core_statement):
 }}
 """.strip()
 
-    print("📚 [階段 4] 逐篇量化背景文獻強度向量...")
+    print("📚 [階段 5] 逐篇量化背景文獻強度向量...")
     response = call_llm_with_retry(
         client,
         messages=[
@@ -549,6 +710,10 @@ def evaluate_background_papers(final_papers, manifest, core_statement):
             "title": valid_map[paper_id]["title"],
             "abstract": valid_map[paper_id]["abstract"],
             "note": normalize_whitespace(item.get("note", "")),
+            "lexical_score": valid_map[paper_id].get("lexical_score", 0),
+            "coverage": valid_map[paper_id].get("coverage", 0.0),
+            "matched_terms": valid_map[paper_id].get("matched_terms", []),
+            "matched_phrases": valid_map[paper_id].get("matched_phrases", []),
             "scores": scores,
         })
 
@@ -564,7 +729,7 @@ def evaluate_background_papers(final_papers, manifest, core_statement):
 
 
 # ------------------------------------------------------------------------------
-# 階段 4：幾何量化與可解釋輸出
+# 階段 6：幾何量化與可解釋輸出
 # ------------------------------------------------------------------------------
 
 def aggregate_background(scored_papers):
@@ -681,45 +846,20 @@ def format_vector_logs(vector_data):
     return logs
 
 
-def escape_latex(text):
-    if text is None:
-        return ""
+def format_reference_records(scored_papers):
+    rows = []
+    for p in scored_papers:
+        doi_link = f"https://doi.org/{p['id']}" if p["id"] != "Unknown" else "#"
+        terms = ", ".join(p["matched_terms"][:8]) if p["matched_terms"] else "無"
+        phrases = "; ".join(p["matched_phrases"][:4]) if p["matched_phrases"] else "無"
+        note = f"｜{p['note']}" if p["note"] else ""
 
-    replacements = [
-        ("\\", "__LATEX_BACKSLASH__"),
-        ("&", r"\&"),
-        ("%", r"\%"),
-        ("$", r"\$"),
-        ("#", r"\#"),
-        ("_", r"\_"),
-        ("{", r"\{"),
-        ("}", r"\}"),
-        ("~", r"\textasciitilde{}"),
-        ("^", r"\textasciicircum{}"),
-        ("__LATEX_BACKSLASH__", r"\textbackslash{}"),
-    ]
-
-    out = str(text)
-    for src, dst in replacements:
-        out = out.replace(src, dst)
-    return out
-
-
-def markdown_to_latex(text):
-    lines = str(text).splitlines()
-    out = []
-
-    for line in lines:
-        if line.startswith("### "):
-            out.append(f"\\subsubsection{{{escape_latex(line[4:])}}}")
-        elif line.startswith("## "):
-            out.append(f"\\subsection{{{escape_latex(line[3:])}}}")
-        elif line.startswith("# "):
-            out.append(f"\\section{{{escape_latex(line[2:])}}}")
-        else:
-            out.append(escape_latex(line))
-
-    return "\n".join(out)
+        rows.append(
+            f"- [DOI 連結]({doi_link}) **{p['title']}** "
+            f"｜ lexical `{p['lexical_score']}` ｜ coverage `{p['coverage']}` "
+            f"｜ 命中詞 `{terms}` ｜ 命中片語 `{phrases}` {note}"
+        )
+    return rows
 
 
 def generate_summary(raw_text, global_relation, global_angle, global_proximity):
@@ -729,11 +869,12 @@ def generate_summary(raw_text, global_relation, global_angle, global_proximity):
 整體相位角：約 {global_angle} 度。
 整體語意相近度：約 {global_proximity} / 100。
 
-請根據下文，撰寫 180-220 字中文理論導讀。
+請根據下文，撰寫 180-240 字中文理論導讀。
 要求：
 1. 第一句必須以「本理論架構...」開頭。
 2. 客觀，不要鼓勵語氣。
 3. 要指出它與背景場是同向、弱同向、正交還是反向，並說明它強在哪裡、距離在哪裡。
+4. 不要神話化，不要空泛。
 """.strip()
 
     response = call_llm_with_retry(
@@ -773,19 +914,26 @@ def process_avh_manifestation(source_path, manifest):
         user_state_desc = state_info["desc"]
 
         raw_papers = fetch_broad_neighborhood_crossref(user_profile["core_statement"])
-        final_papers, filtering_log = rerank_and_filter_papers(user_profile["core_statement"], raw_papers)
+        prefiltered_papers, prefilter_log = prefilter_raw_papers(
+            raw_papers,
+            user_profile["core_statement"],
+            user_profile["query_terms"],
+            user_profile["query_phrases"],
+            keep_top_k=12
+        )
+        final_papers, filtering_log = rerank_and_filter_papers(user_profile["core_statement"], prefiltered_papers)
 
         if not final_papers:
             baseline_status = "Sparse Reference Field（稀疏參考場）"
-            paper_records = ["- `[Void]` **全域寂靜**：目前不足以構成穩定可量化的背景能勢場。"]
             background_hex = "000000"
+            paper_records = ["- `[Void]` **全域寂靜**：目前不足以構成穩定可量化的背景能勢場。"]
             vector_logs = ["* **背景向量量化**：無足夠背景質量，無法形成穩定比較。"]
             global_angle = "N/A"
             global_cosine = "N/A"
             global_proximity = "N/A"
             global_relation = "Void"
             background_batch_log = "無可用背景文獻。"
-            summary = "本理論架構目前落在稀疏參考場之中，外部文獻鄰域不足，尚無法形成穩定背景母體，因此其與現有學界的方向關係只能暫時視為未定。"
+            summary = "本理論架構目前落在稀疏參考場之中，外部文獻鄰域不足，尚無法形成穩定背景母體，因此其與現有學界的方向關係暫時未定。"
         else:
             baseline_status = f"Background Field Established（背景能勢建構完成：{len(final_papers)} 鄰域節點）"
             scored_background = evaluate_background_papers(final_papers, manifest, user_profile["core_statement"])
@@ -800,11 +948,7 @@ def process_avh_manifestation(source_path, manifest):
             global_proximity = vector_data["global_proximity"]
             global_relation = vector_data["global_relation"]
 
-            paper_records = []
-            for p in scored_background["papers"]:
-                doi_link = f"https://doi.org/{p['id']}" if p["id"] != "Unknown" else "#"
-                note = f"｜{p['note']}" if p["note"] else ""
-                paper_records.append(f"- [DOI 連結]({doi_link}) **{p['title']}** {note}")
+            paper_records = format_reference_records(scored_background["papers"])
 
             summary = generate_summary(
                 raw_text,
@@ -822,10 +966,14 @@ def process_avh_manifestation(source_path, manifest):
             "full_text": raw_text,
             "meta_data": {
                 "core_statement": user_profile["core_statement"],
+                "query_terms": user_profile["query_terms"],
+                "query_phrases": user_profile["query_phrases"],
                 "academic_fingerprint": user_profile["academic_fingerprint"],
                 "user_dimension_logs": format_user_dimension_logs(user_profile),
                 "raw_hits": len(raw_papers),
+                "prefilter_hits": len(prefiltered_papers),
                 "final_hits": len(final_papers),
+                "prefilter_log": prefilter_log,
                 "filtering_log": filtering_log,
                 "background_batch_log": background_batch_log,
                 "paper_records": paper_records,
@@ -855,6 +1003,8 @@ def generate_trajectory_log(target_file, data):
     user_logs_text = "\n\n".join(meta["user_dimension_logs"])
     papers_text = "\n".join(meta["paper_records"])
     vector_logs_text = "\n\n".join(meta["vector_logs"])
+    query_terms_text = ", ".join(meta["query_terms"]) if meta["query_terms"] else "無"
+    query_phrases_text = " ｜ ".join(meta["query_phrases"]) if meta["query_phrases"] else "無"
 
     return (
         f"## 📡 AVH 技術觀測日誌：`{target_file}`\n"
@@ -863,14 +1013,17 @@ def generate_trajectory_log(target_file, data):
         f"---\n"
         f"### 1. 🌌 絕對本體觀測（Absolute Ontology）\n"
         f"* 🛡️ **本體論絕對指紋（Ontology Hex）**：`[{data['user_hex']}]` - **{data['state_name']}**\n"
-        f"* **本體核心宣告（Core Statement）**：`{meta['core_statement']}`\n\n"
+        f"* **本體核心宣告／唯一檢索句（Core Statement / Query）**：`{meta['core_statement']}`\n"
+        f"* **檢索詞錨點（Query Term Anchors）**：`{query_terms_text}`\n"
+        f"* **檢索片語錨點（Query Phrase Anchors）**：`{query_phrases_text}`\n\n"
         f"**學術指紋（Academic Fingerprint）**：\n"
         f"> {meta['academic_fingerprint']}\n\n"
         f"**詳細本體量化儀表板（Ontology Quantification Dashboard）**：\n\n"
         f"{user_logs_text}\n\n"
         f"---\n"
         f"### 2. 🎣 背景能勢打撈（Background Field Retrieval）\n"
-        f"* **場域建構狀態（Field Status）**：`{meta['baseline_status']}` （原始打撈 {meta['raw_hits']} 篇）\n"
+        f"* **場域建構狀態（Field Status）**：`{meta['baseline_status']}` （原始打撈 {meta['raw_hits']} 篇 → prefilter 保留 {meta['prefilter_hits']} 篇 → 最終保留 {meta['final_hits']} 篇）\n"
+        f"* **程式級預過濾日誌（Programmatic Prefilter Log）**：_{meta['prefilter_log']}_\n"
         f"* **大腦重排日誌（Re-ranking Log）**：_{meta['filtering_log']}_\n"
         f"* **背景批次量化摘要（Batch Quantification Log）**：_{meta['background_batch_log']}_\n"
         f"* **參考鄰域節點（Reference Neighborhood）**：\n"
@@ -889,14 +1042,13 @@ def generate_trajectory_log(target_file, data):
         f"### 4. 🧾 系統導讀摘要（System Interpretation）\n"
         f"> {data['summary']}\n\n"
         f"---\n"
-        f"> *註：本報告採 V34.0 可解釋量化版。Hex 由程式從分數向量推導，不再直接依賴 LLM 輸出 bit。*\n"
+        f"> *註：本報告採 V34.1 單核精準檢索版。Core Statement 與 Query 不分離；檢索 trace 已顯性保留。*\n"
     )
 
 
 def export_wordpress_html(basename, data):
     safe_full_text = html.escape(data["full_text"]).replace("\n", "<br>")
     safe_summary = html.escape(data["summary"])
-    safe_desc = html.escape(data["state_desc"])
     meta = data["meta_data"]
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -907,15 +1059,14 @@ def export_wordpress_html(basename, data):
         "  </div>\n"
         "  <hr>\n"
         "  <div class=\"avh-seal\" style=\"border: 2px solid #333; padding: 20px; background: #fafafa; margin-top: 30px;\">\n"
-        "    <h3>📡 學術價值全像儀（AVH）可解釋量化認證</h3>\n"
+        "    <h3>📡 學術價值全像儀（AVH）單核精準檢索認證</h3>\n"
+        f"    <p><strong>核心宣告／檢索句：</strong>{html.escape(meta['core_statement'])}</p>\n"
         f"    <p><strong>本體狀態：</strong>[ {html.escape(data['user_hex'])} ] - {html.escape(data['state_name'])}</p>\n"
         f"    <p><strong>背景狀態：</strong>[ {html.escape(data['baseline_hex'])} ]</p>\n"
         f"    <p><strong>整體場域關係：</strong>{html.escape(str(meta['global_relation']))}</p>\n"
         f"    <p><strong>整體相位角：</strong>{html.escape(str(meta['global_angle']))}</p>\n"
         f"    <p><strong>整體語意相近度：</strong>{html.escape(str(meta['global_proximity']))} / 100</p>\n"
-        f"    <p><strong>學術指紋：</strong><br>{html.escape(meta['academic_fingerprint'])}</p>\n"
         f"    <p><strong>理論導讀摘要：</strong><br>{safe_summary}</p>\n"
-        f"    <p><strong>系統評語：</strong><br>{safe_desc}</p>\n"
         f"    <p>物理時間戳：{timestamp_str}</p>\n"
         "  </div>\n"
         "</div>\n"
@@ -927,7 +1078,6 @@ def export_wordpress_html(basename, data):
 
 def export_latex(basename, data):
     safe_text = markdown_to_latex(data["full_text"])
-    safe_desc = escape_latex(data["state_desc"])
     meta = data["meta_data"]
 
     tex_output = (
@@ -940,13 +1090,12 @@ def export_latex(basename, data):
         "\\begin{document}\n"
         "\\maketitle\n"
         "\\begin{abstract}\n"
-        f"本體狀態：[{data['user_hex']}] {escape_latex(data['state_name'])}。\n\n"
+        f"核心宣告／檢索句：{escape_latex(meta['core_statement'])}\n\n"
+        f"本體狀態：[{data['user_hex']}] {escape_latex(data['state_name'])}\n\n"
         f"背景狀態：[{data['baseline_hex']}]\n\n"
         f"整體場域關係：{escape_latex(str(meta['global_relation']))}\n\n"
         f"整體相位角：{escape_latex(str(meta['global_angle']))}\n\n"
-        f"整體語意相近度：{escape_latex(str(meta['global_proximity']))}/100\n\n"
-        f"學術指紋：{escape_latex(meta['academic_fingerprint'])}\n\n"
-        f"系統評語：{safe_desc}\n"
+        f"整體語意相近度：{escape_latex(str(meta['global_proximity']))}/100\n"
         "\\end{abstract}\n\n"
         f"{safe_text}\n\n"
         "\\end{document}\n"
@@ -974,7 +1123,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
-        log_file.write("# 📡 AVH 學術價值全像儀：V34.0 可解釋量化日誌\n---\n")
+        log_file.write("# 📡 AVH 學術價值全像儀：V34.1 單核精準檢索日誌\n---\n")
         last_hex_code = ""
 
         for target_source in source_files:
