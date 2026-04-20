@@ -11,13 +11,13 @@ from openai import OpenAI
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V31.2 反向尺規與背景能勢版 - 嚴謹正名與精準排版)
+# AVH Genesis Engine (V32.0 基準反轉與學術指紋顯化版)
 # ==============================================================================
 
 LLM_MODEL_NAME = 'openai/gpt-4o'
 MD_FENCE = "`" * 3
 
-print(f"🧠 [載入觀測核心] 啟動 V31.2 高維度大腦矩陣 ({LLM_MODEL_NAME})...")
+print(f"🧠 [載入觀測核心] 啟動 V32.0 高維度大腦矩陣 ({LLM_MODEL_NAME})...")
 
 def get_llm_client():
     token = os.environ.get("COPILOT_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -69,7 +69,7 @@ def evaluate_user_text_and_compress(raw_text, manifest):
 為了向外部圖譜發動精準的語意檢索，請將這篇文本的最核心學術貢獻，壓縮成一句「極度精準的英文學術核心宣告 (Core Statement)」。
 **規則**：
 1. 長度嚴格控制在 10 到 15 個英文單字之間。
-2. 拒絕空泛的學術八股文 (例如 "A framework for...")。必須直指理論本質，提取最具原創性的物理/治理/拓樸概念。
+2. 拒絕空泛的學術八股文。必須直指理論本質，提取最具原創性的物理/治理/拓樸概念。
 
 請回傳 JSON：
 {MD_FENCE}json
@@ -97,7 +97,7 @@ def evaluate_user_text_and_compress(raw_text, manifest):
 
 def fetch_broad_neighborhood_crossref(core_statement):
     headers = {
-        "User-Agent": "AVH-Hologram-Engine/31.2 (https://github.com/alaric-kuo; mailto:open-source-bot@example.com)"
+        "User-Agent": "AVH-Hologram-Engine/32.0 (https://github.com/alaric-kuo; mailto:open-source-bot@example.com)"
     }
     encoded_query = urllib.parse.quote(core_statement)
     url = f"https://api.crossref.org/works?query={encoded_query}&select=DOI,title,abstract,is-referenced-by-count&rows=25"
@@ -214,7 +214,7 @@ def evaluate_matrix_with_reverse_ruler(papers, manifest, core_statement):
 }}
 {MD_FENCE}
 """
-    print("📐 [場域測量 - 階段 4] 啟動反向尺規！以本體為原點，測量參考背景能勢的偏差角度...")
+    print("📐 [場域測量 - 階段 4] 啟動反向尺規！以本理論為原點，測量參考背景能勢的偏差角度...")
     response = call_llm_with_retry(
         client,
         messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": papers_str}],
@@ -236,7 +236,11 @@ def process_avh_manifestation(source_path, manifest):
         user_hex = user_data["hex_code"]
         dim_logs = user_data["dim_logs"]
         core_statement = user_data.get("core_statement", "Academic Ontology Theory")
-        user_state_info = manifest["states"].get(user_hex, {"name": "未知狀態", "desc": "缺乏觀測紀錄"})
+        
+        # 【V32.0 提取學術指紋】
+        state_info = manifest["states"].get(user_hex, {"name": "未知狀態", "desc": "缺乏觀測紀錄"})
+        user_state_name = state_info["name"]
+        user_state_desc = state_info["desc"]
         
         raw_papers = fetch_broad_neighborhood_crossref(core_statement)
         final_papers, filtering_log = rerank_and_filter_papers(core_statement, raw_papers)
@@ -281,7 +285,8 @@ def process_avh_manifestation(source_path, manifest):
         return {
             "user_hex": user_hex,
             "baseline_hex": baseline_hex,
-            "state_name": user_state_info['name'],
+            "state_name": user_state_name,
+            "state_desc": user_state_desc,
             "dim_logs": dim_logs,
             "summary": clean_summary,
             "full_text": raw_text,
@@ -304,7 +309,6 @@ def process_avh_manifestation(source_path, manifest):
 
 def generate_trajectory_log(target_file, data):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S CST")
-    # V31.2 修正排版：使用雙換行確保 Markdown 正確渲染列表間距
     dim_logs_text = "\n\n".join(data['dim_logs'])
     meta = data['meta_data']
     papers_text = "\n".join(meta['paper_records'])
@@ -318,6 +322,8 @@ def generate_trajectory_log(target_file, data):
         f"### 1. 🌌 絕對本體觀測 (Absolute Ontology)\n"
         f"* 🛡️ **本體論絕對指紋 (Ontology Hex)**：`[{data['user_hex']}]` - **{data['state_name']}**\n"
         f"* **本體核心宣告 (Core Statement)**：`{meta['core_statement']}`\n\n"
+        f"**學術指紋 (Academic Fingerprint)**：\n"
+        f"> {data['state_desc']}\n\n"
         f"**詳細本體測量儀表板**：\n\n"
         f"{dim_logs_text}\n\n"
         f"---\n"
@@ -334,7 +340,7 @@ def generate_trajectory_log(target_file, data):
         f"**維度向量干涉儀表板**：\n\n"
         f"{vectors_text}\n\n"
         f"---\n"
-        f"> *註：本報告採 V31.2 反向尺規架構。將本體視為絕對真理基準，計算當代學界文獻與其之相位偏差角度。*\n"
+        f"> *註：本報告採 V32.0 基準反轉架構，將本體視為絕對真理基準，並完整顯化系統定義之學術指紋。*\n"
     )
     return log_output
 
@@ -356,6 +362,7 @@ def export_wordpress_html(basename, data):
         f"        <p>場域建構狀態：{meta['baseline_status']}</p>\n"
         f"        <p><strong>整體場域偏差：{meta['global_angle']}</strong></p>\n"
         f"        <p>最終本體狀態：[ {data['user_hex']} ] - <strong>{data['state_name']}</strong></p>\n"
+        f"        <p><strong>學術指紋：</strong><br>{data['state_desc']}</p>\n"
         f"        <p>物理時間戳：{timestamp_str}</p>\n"
         "    </div>\n"
         "</div>\n"
@@ -376,6 +383,7 @@ def export_latex(basename, data):
         "\\maketitle\n"
         "\\begin{abstract}\n"
         f"[{data['user_hex']}] {data['state_name']}。\n\n"
+        f"學術指紋：{data['state_desc']}\n\n"
         f"整體場域偏差：{data['meta_data']['global_angle']}\n"
         "\\end{abstract}\n\n"
         f"{tex_content}\n\n"
@@ -397,7 +405,7 @@ if __name__ == "__main__":
         sys.exit(0)
         
     with open("AVH_OBSERVATION_LOG.md", "w", encoding="utf-8") as log_file:
-        log_file.write("# 📡 AVH 學術價值全像儀：V31.2 基準反轉觀測日誌\n---\n")
+        log_file.write("# 📡 AVH 學術價值全像儀：V32.0 全維指紋顯化日誌\n---\n")
         last_hex_code = ""
         for target_source in source_files:
             result_data = process_avh_manifestation(target_source, manifest)
