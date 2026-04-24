@@ -14,7 +14,7 @@ from datetime import datetime
 import zhconv
 
 # ==============================================================================
-# AVH Genesis Engine (V58.0 主題錨點回歸版 - V55 主幹保留，八探針主題綁定與標題主題預篩)
+# AVH Genesis Engine (V59.0 探針多樣化微調版 - V55 主幹保留，八探針主題綁定與標題主題預篩)
 # ==============================================================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,7 +38,7 @@ REQUIRE_ABSTRACT_FOR_FINAL = True
 
 ABSTRACT_CACHE = {}
 
-print(f"🧠 [載入本地觀測核心] 啟動 V58.0 主題錨點回歸版 (引擎: {OLLAMA_MODEL_NAME})...")
+print(f"🧠 [載入本地觀測核心] 啟動 V59.0 探針多樣化微調版 (引擎: {OLLAMA_MODEL_NAME})...")
 
 if not os.path.exists(MANIFEST_PATH):
     print(f"⚠️ 遺失底層定義檔：{MANIFEST_PATH}，系統終止觀測。")
@@ -111,8 +111,18 @@ def call_local_llm(messages, json_mode=False, temperature=0.0, num_ctx=8192):
     if json_mode:
         payload["format"] = "json"
 
+    system_chars = sum(len(str(m.get("content", ""))) for m in messages if m.get("role") == "system")
+    user_chars = sum(len(str(m.get("content", ""))) for m in messages if m.get("role") == "user")
+    assistant_chars = sum(len(str(m.get("content", ""))) for m in messages if m.get("role") == "assistant")
     payload_size = len(json.dumps(payload, ensure_ascii=False))
-    print(f"   ↳ ⚡ [物理探測] 即將注入資訊熵：{payload_size} 字元。上下文視窗：{num_ctx}...")
+    framing_chars = max(0, payload_size - system_chars - user_chars - assistant_chars)
+    mode = "json" if json_mode else "text"
+
+    print(
+        "   ↳ ⚡ [物理探測] 資訊熵拆解："
+        f"system={system_chars} ｜ user={user_chars} ｜ assistant={assistant_chars} ｜ "
+        f"framing={framing_chars} ｜ payload={payload_size} ｜ mode={mode} ｜ ctx={num_ctx}"
+    )
     start_time = time.time()
 
     try:
@@ -302,6 +312,51 @@ def build_topic_anchor_fallback(*texts):
     parts = [w for w, _ in counter.most_common(6)]
     return " ".join(parts[:5]).strip()
 
+def leading_content_signature(text, n=3):
+    toks = tokenize_content_words(text)
+    return " ".join(toks[:n])
+
+def diversify_probe_candidates(candidates, topic_anchor, limit=8):
+    normalized = []
+    seen_exact = set()
+    for cand in candidates:
+        cand_str = inject_topic_anchor(topic_anchor, normalize_statement(cand))
+        if not is_valid_probe_statement(cand_str):
+            continue
+        if not passes_topic_anchor_gate(cand_str, topic_anchor):
+            continue
+        key = cand_str.lower()
+        if key in seen_exact:
+            continue
+        seen_exact.add(key)
+        normalized.append(cand_str)
+
+    diversified = []
+    chosen = set()
+    lead_counts = collections.Counter()
+
+    for cand in normalized:
+        lead = leading_content_signature(cand, 3)
+        if lead and lead_counts[lead] >= 1:
+            continue
+        diversified.append(cand)
+        chosen.add(cand.lower())
+        if lead:
+            lead_counts[lead] += 1
+        if len(diversified) >= limit:
+            return diversified[:limit]
+
+    for cand in normalized:
+        key = cand.lower()
+        if key in chosen:
+            continue
+        diversified.append(cand)
+        chosen.add(key)
+        if len(diversified) >= limit:
+            break
+
+    return diversified[:limit]
+
 def topic_anchor_overlap(topic_anchor, text):
     anchor_tokens = set(tokenize_content_words(topic_anchor))
     if not anchor_tokens:
@@ -408,7 +463,7 @@ def reconstruct_openalex_abstract(inv_idx):
 def fetch_crossref_abstract_by_doi(doi):
     try:
         url = f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"
-        r = requests.get(url, headers={"User-Agent": "AVH-Hologram-Engine/58.0"}, timeout=20)
+        r = requests.get(url, headers={"User-Agent": "AVH-Hologram-Engine/59.0"}, timeout=20)
         r.raise_for_status()
         abstract = clean_crossref_abstract(r.json().get("message", {}).get("abstract", ""))
         return abstract, "crossref_doi" if abstract else ("", "")
@@ -419,7 +474,7 @@ def fetch_openalex_abstract_by_doi(doi):
     try:
         doi_url = f"https://doi.org/{doi}"
         url = f"https://api.openalex.org/works?filter=doi:{urllib.parse.quote(doi_url, safe=':/')}&per-page=1"
-        r = requests.get(url, headers={"User-Agent": "AVH-Hologram-Engine/58.0"}, timeout=20)
+        r = requests.get(url, headers={"User-Agent": "AVH-Hologram-Engine/59.0"}, timeout=20)
         r.raise_for_status()
         results = r.json().get("results", [])
         if not results:
@@ -432,7 +487,7 @@ def fetch_openalex_abstract_by_doi(doi):
 def fetch_semanticscholar_abstract_by_doi(doi):
     try:
         url = f"https://api.semanticscholar.org/graph/v1/paper/DOI:{urllib.parse.quote(doi)}?fields=title,abstract"
-        r = requests.get(url, headers={"User-Agent": "AVH-Hologram-Engine/58.0"}, timeout=20)
+        r = requests.get(url, headers={"User-Agent": "AVH-Hologram-Engine/59.0"}, timeout=20)
         r.raise_for_status()
         abstract = normalize_whitespace(r.json().get("abstract", ""))
         return abstract, "semanticscholar" if abstract else ("", "")
@@ -475,10 +530,12 @@ def evaluate_user_profile(raw_text):
 4. topic_anchor_en：用 3-8 個英文單字抽出全文真正的「主題錨點」，它必須指向文章的主題世界，而不是單純的方法、工具、比喻或公式。
 5. primary_statement 必須是最能代表全文整體骨架的英文核心論述，不可只是口號。
 6. core_statements_8 必須是 8 句不同角度的英文探針。每句 <= 24 個英文單字，而且每句都必須保留 topic_anchor_en 的主題語義；不可以只剩機制、工具、數學或物理隱喻。
-7. implementation_signals：列出文中出現的具體實作證據，例如引擎、Crossref、Cosine、Tensor、JSON、Ollama、md/html/tex、Git、自動化輸出等。
-8. application_signals：列出文中可被視為「應用實相」的證據。只要文本明確描述可執行流程、引擎、輸出資產、觀測日誌、HTML/LaTeX/Markdown 實體，就不能把 application 判為純理論停留。
-9. retrieval_signature_en：用 1 句英文寫出「拿去和外部文獻重新比對」時最穩定的全文簽名，不能空泛。
-10. absolutely_forbidden_targets：列出作者正在批判、排除或推翻的舊概念，避免把反對對象誤當支持內容。
+7. 8 句探針必須至少覆蓋 4 種角度，例如：主題命題、核心對象、機制描述、驗證/輸出/應用。
+8. 不得有超過 2 句使用相同的開頭片語；不得只是同一句換尾巴。topic_anchor_en 可以放在句中，不必固定放在句首。
+9. implementation_signals：列出文中出現的具體實作證據，例如引擎、Crossref、Cosine、Tensor、JSON、Ollama、md/html/tex、Git、自動化輸出等。
+10. application_signals：列出文中可被視為「應用實相」的證據。只要文本明確描述可執行流程、引擎、輸出資產、觀測日誌、HTML/LaTeX/Markdown 實體，就不能把 application 判為純理論停留。
+11. retrieval_signature_en：用 1 句英文寫出「拿去和外部文獻重新比對」時最穩定的全文簽名，不能空泛。
+12. absolutely_forbidden_targets：列出作者正在批判、排除或推翻的舊概念，避免把反對對象誤當支持內容。
 
 JSON 結構：
 {{
@@ -532,21 +589,18 @@ JSON 結構：
     if not raw_topic_anchor:
         raw_topic_anchor = "knowledge ontology evaluation"
 
-    valid_statements = []
+    raw_probe_candidates = []
     if isinstance(raw_candidates, list):
         for cand in raw_candidates:
             cand_str = inject_topic_anchor(raw_topic_anchor, normalize_statement(cand))
             if is_valid_probe_statement(cand_str) and passes_topic_anchor_gate(cand_str, raw_topic_anchor):
-                valid_statements.append(cand_str)
+                raw_probe_candidates.append(cand_str)
             else:
                 print(f"   ↳ [過濾剔除] Probe 未保留主題或格式不合：{cand_str}")
 
-    valid_statements = unique_list(valid_statements, 12)
+    valid_statements = diversify_probe_candidates(raw_probe_candidates, raw_topic_anchor, limit=8)
 
     primary_candidate = inject_topic_anchor(raw_topic_anchor, raw_primary) if raw_primary else ""
-    if primary_candidate and is_valid_probe_statement(primary_candidate) and passes_topic_anchor_gate(primary_candidate, raw_topic_anchor):
-        if primary_candidate.lower() not in {s.lower() for s in valid_statements}:
-            valid_statements.insert(0, primary_candidate)
 
     if not valid_statements:
         print("   ↳ ⚠️ [容錯介入] 全文直讀未產生有效探針，啟動標題淬取...")
@@ -559,14 +613,18 @@ JSON 結構：
         fallback = inject_topic_anchor(raw_topic_anchor, fallback)
         valid_statements = [fallback]
 
-    primary_statement = primary_candidate if primary_candidate and is_valid_probe_statement(primary_candidate) else valid_statements[0]
+    if primary_candidate and is_valid_probe_statement(primary_candidate) and passes_topic_anchor_gate(primary_candidate, raw_topic_anchor):
+        primary_statement = primary_candidate
+    else:
+        primary_statement = valid_statements[0]
+
     retrieval_signature = raw_signature if raw_signature else primary_statement
 
     print(f"   ↳ 🎯 [主題錨點] {raw_topic_anchor}")
+    print(f"   ↳ 🎯 [核心論述] {primary_statement}")
     print(f"   ↳ 🎯 [多視角展開] 成功釋放 {len(valid_statements)} 組有效探針：")
     for i, stmt in enumerate(valid_statements, 1):
-        head = "Primary" if stmt == primary_statement else f"Probe {i}"
-        print(f"      - [{head}] {stmt}")
+        print(f"      - [Probe {i}] {stmt}")
 
     try:
         by_key = {}
@@ -686,7 +744,7 @@ def multi_perspective_retrieval_and_rerank(statements, profile):
     anchor_terms = unique_list(profile["implementation_signals"] + profile["application_signals"], 30)
     topic_anchor = profile.get("topic_anchor_en", "")
 
-    print(f"🌍 [階段 2 & 3] 啟動多視角打撈與全域顯化 (共 {len(statements)} 組有效探針，最大搜索量 {len(statements) * RETRIEVAL_ROWS_PER_PROBE} 篇)...")
+    print(f"🌍 [階段 2] 多視角打撈啟動 (共 {len(statements)} 組有效探針，最大搜索量 {len(statements) * RETRIEVAL_ROWS_PER_PROBE} 篇)...")
 
     for idx, stmt in enumerate(statements):
         print(f"   ↳ ⏳ [視角 {idx + 1}/{len(statements)}] 發射論述: {stmt}")
@@ -698,10 +756,10 @@ def multi_perspective_retrieval_and_rerank(statements, profile):
         )
 
         try:
-            response = requests.get(url, headers={"User-Agent": "AVH-Hologram-Engine/58.0"}, timeout=20)
+            response = requests.get(url, headers={"User-Agent": "AVH-Hologram-Engine/59.0"}, timeout=20)
             if response.status_code == 429:
                 time.sleep(5)
-                response = requests.get(url, headers={"User-Agent": "AVH-Hologram-Engine/58.0"}, timeout=20)
+                response = requests.get(url, headers={"User-Agent": "AVH-Hologram-Engine/59.0"}, timeout=20)
             response.raise_for_status()
         except Exception as e:
             print(f"      ⚠️ API 呼叫失敗 ({e})")
@@ -810,6 +868,9 @@ def multi_perspective_retrieval_and_rerank(statements, profile):
             effective_hits = [c for c in scored_for_this_stmt if c["similarity"] >= DOC_CAPTURE_THRESHOLD]
             shadow_hits = []
 
+        progress_log = f"  * ⏱️ **Probe 進度**：raw `{len(items)}` ｜ title-pass `{len(scored_for_this_stmt)}` ｜ abstract-ok `{len(effective_hits)}`"
+        print(f"      ↳ [Probe 進度] raw={len(items)} ｜ title-pass={len(scored_for_this_stmt)} ｜ abstract-ok={len(effective_hits)}")
+
         if effective_hits:
             best = effective_hits[0]
             sim_str = f"{best['similarity']:.3f}"
@@ -838,7 +899,7 @@ def multi_perspective_retrieval_and_rerank(statements, profile):
 
         global_candidate_pool.extend(effective_hits)
 
-    print(f"🌍 [全域顯化] 正式背景池共有 {len(global_candidate_pool)} 篇摘要可驗證文獻，啟動雙簽名聚合排序...")
+    print(f"🌍 [階段 3] 全域顯化啟動：正式背景池共有 {len(global_candidate_pool)} 篇摘要可驗證文獻，開始聚合排序...")
 
     if not global_candidate_pool:
         return [], retrieval_logs, raw_hits_count, shadow_hits_global
@@ -1419,7 +1480,7 @@ if __name__ == "__main__":
     success_count = 0
 
     with open(log_path, "w", encoding="utf-8") as log_file:
-        log_file.write("# 📡 AVH 學術價值全像儀：V58.0 主題錨點回歸版\n---\n")
+        log_file.write("# 📡 AVH 學術價值全像儀：V59.0 探針多樣化微調版\n---\n")
 
         for i, source in enumerate(md_files):
             print(f"\n{'=' * 60}")
